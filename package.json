@@ -1,0 +1,27 @@
+{
+  "name": "prpilot-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PRPilot — AI open-source contribution agent monorepo",
+  "scripts": {
+    "dev": "concurrently -n \"api,web\" -c \"blue,green\" \"pnpm --filter @prpilot/api dev\" \"pnpm --filter @prpilot/web dev\"",
+    "dev:api": "pnpm --filter @prpilot/api dev",
+    "dev:web": "pnpm --filter @prpilot/web dev",
+    "build": "pnpm --filter @prpilot/shared build && pnpm --filter @prpilot/api build && pnpm --filter @prpilot/web build",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.20.0",
+    "prettier": "^3.5.1",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.0.5"
+  }
+}
