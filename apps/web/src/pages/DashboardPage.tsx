@@ -19,7 +19,7 @@ import { IssueSummaryCard } from '../components/github/IssueSummaryCard';
 import { RepositorySummaryCard } from '../components/github/RepositorySummaryCard';
 import { AnalysisReadinessCard } from '../components/github/AnalysisReadinessCard';
 
-const EXAMPLE_URL = 'https://github.com/facebook/react/issues/28000';
+const EXAMPLE_URL = 'https://github.com/facebook/react/issues/27986';
 
 export const DashboardPage: React.FC = () => {
   const [urlInput, setUrlInput] = useState('');
