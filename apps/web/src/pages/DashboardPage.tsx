@@ -14,9 +14,10 @@ import {
   Clock,
 } from 'lucide-react';
 import { analyzeIssueRequestSchema } from '@prpilot/shared';
-import { useGithubIssueLookup } from '../hooks/useGithubIssueLookup';
+import { useGithubIssueAnalysis } from '../hooks/useGithubIssueAnalysis';
 import { IssueSummaryCard } from '../components/github/IssueSummaryCard';
 import { RepositorySummaryCard } from '../components/github/RepositorySummaryCard';
+import { IssueAnalysisCard } from '../components/github/IssueAnalysisCard';
 import { AnalysisReadinessCard } from '../components/github/AnalysisReadinessCard';
 
 const EXAMPLE_URL = 'https://github.com/facebook/react/issues/27986';
@@ -26,12 +27,12 @@ export const DashboardPage: React.FC = () => {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const {
-    mutate: lookupIssue,
-    data: lookupResult,
+    mutate: analyzeIssue,
+    data: analysisResult,
     isPending,
     error: apiError,
-    reset: resetLookup,
-  } = useGithubIssueLookup();
+    reset: resetAnalysis,
+  } = useGithubIssueAnalysis();
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUrlInput(e.target.value);
@@ -43,13 +44,13 @@ export const DashboardPage: React.FC = () => {
   const fillExample = () => {
     setUrlInput(EXAMPLE_URL);
     setValidationError(null);
-    resetLookup();
+    resetAnalysis();
   };
 
   const handleReset = () => {
     setUrlInput('');
     setValidationError(null);
-    resetLookup();
+    resetAnalysis();
   };
 
   const performLookup = (url: string) => {
@@ -64,7 +65,7 @@ export const DashboardPage: React.FC = () => {
     }
 
     setValidationError(null);
-    lookupIssue(url);
+    analyzeIssue(url);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -154,7 +155,7 @@ export const DashboardPage: React.FC = () => {
                   {isPending ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Analyzing...</span>
+                      <span>Analyzing issue...</span>
                     </>
                   ) : (
                     <>
@@ -219,7 +220,7 @@ export const DashboardPage: React.FC = () => {
                                 ? 'GitHub Secondary Rate Limit Triggered'
                                 : 'GitHub API Rate Limit Reached'
                               : apiError.status === 502 || apiError.status === 504
-                                ? 'Upstream GitHub Connection Error'
+                                ? 'Upstream Provider Error'
                                 : 'Unable to Analyze Issue'}
                       </h4>
                       <p className="leading-relaxed text-rose-700">{apiError.message}</p>
@@ -267,14 +268,37 @@ export const DashboardPage: React.FC = () => {
           })()}
       </div>
 
-      {/* Successful Issue Lookup Interface */}
-      {lookupResult && (
+      {/* Pending Analysis Progress Card */}
+      {isPending && (
+        <div
+          className="rounded-xl border border-brand-200 bg-brand-50/50 p-6 text-center space-y-3 animate-in fade-in"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Analyzing Issue with PRPilot AI...
+            </h3>
+            <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto leading-relaxed">
+              Fetching issue metadata, evaluating problem description, and formulating 7-section
+              structured triage analysis.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Successful Issue Lookup & AI Analysis Interface */}
+      {analysisResult && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <IssueSummaryCard
-            issue={lookupResult.issue}
-            repoFullName={lookupResult.repository.fullName}
+            issue={analysisResult.issue}
+            repoFullName={analysisResult.repository.fullName}
           />
-          <RepositorySummaryCard repository={lookupResult.repository} />
+          <RepositorySummaryCard repository={analysisResult.repository} />
+          <IssueAnalysisCard analysis={analysisResult.analysis} />
           <AnalysisReadinessCard onReset={handleReset} />
         </div>
       )}
@@ -334,7 +358,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Recent Analyses Section */}
-      {!lookupResult && (
+      {!analysisResult && !isPending && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Recent Analyses</h2>

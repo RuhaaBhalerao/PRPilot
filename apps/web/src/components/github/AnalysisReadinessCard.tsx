@@ -40,10 +40,10 @@ export const AnalysisReadinessCard: React.FC<AnalysisReadinessCardProps> = ({ on
         <div className="flex items-start gap-2.5">
           <CheckCircle2 className="h-4 w-4 text-brand-600 mt-0.5 shrink-0" />
           <p className="text-xs text-slate-700 leading-relaxed">
-            <strong>Phase 2 milestone achieved:</strong> Issue title, description, state, author,
-            labels, timestamps, and repository metrics were verified via the PRPilot backend. Full
-            AI repository exploration, AST parsing, Gemini 1.5 Pro root-cause formulation, and
-            dockerized sandbox patch verification will be activated in <strong>Phase 3</strong>.
+            <strong>AI Issue Triage complete:</strong> Problem summary, expected behaviour,
+            hypotheses, evidence, candidate components, fix steps, and regression test plan were
+            generated. Codebase cloning, AST module mapping, and sandbox patch verification follow
+            in <strong>Phase 3</strong>.
           </p>
         </div>
 

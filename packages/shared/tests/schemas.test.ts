@@ -7,6 +7,9 @@ import {
   parseGithubIssueUrl,
   issueLookupResponseSchema,
   type IssueLookupResponse,
+  issueAnalysisSectionSchema,
+  analyzeIssueResponseSchema,
+  type AnalyzeIssueResponse,
 } from '../src/index.js';
 
 describe('Shared Schemas', () => {
@@ -255,6 +258,93 @@ describe('Shared Schemas', () => {
 
       const result = issueLookupResponseSchema.safeParse(mockMinimalResponse);
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('issueAnalysisSectionSchema & analyzeIssueResponseSchema', () => {
+    const validAnalysis = {
+      problemSummary: 'Race condition when toggling rapidly',
+      expectedBehaviour: 'Toggle should debounce or queue state changes cleanly',
+      rootCauseHypotheses: ['Hypothesis 1: State hook does not cancel in-flight async request'],
+      evidenceAndMissingInformation: {
+        verifiedFacts: ['Error log indicates uncaught rejection on line 42'],
+        hypotheses: ['May affect all mobile browsers with slow connections'],
+        missingInformation: ['Exact OS build number was omitted in the report'],
+      },
+      filesOrComponentsToInvestigate: [
+        {
+          name: 'src/components/Toggle.tsx',
+          reason: 'Contains the state toggle handler',
+        },
+      ],
+      proposedFixSteps: [
+        'Add AbortController to in-flight requests',
+        'Update cleanup in useEffect hook',
+      ],
+      regressionTestPlan: ['Simulate 10 fast clicks within 50ms and assert single resolution'],
+      repositoryContextAvailable: false,
+      repositoryContextLimitation:
+        'Repository source files have not been cloned or inspected. File locations are hypotheses.',
+      isClosedIssue: false,
+    };
+
+    it('validates a well-formed 7-section analysis schema', () => {
+      const result = issueAnalysisSectionSchema.safeParse(validAnalysis);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.problemSummary).toBe('Race condition when toggling rapidly');
+        expect(result.data.repositoryContextAvailable).toBe(false);
+      }
+    });
+
+    it('rejects analysis missing required sections', () => {
+      const invalid = {
+        problemSummary: 'Something is broken',
+      };
+      const result = issueAnalysisSectionSchema.safeParse(invalid);
+      expect(result.success).toBe(false);
+    });
+
+    it('validates a complete analyzeIssueResponseSchema', () => {
+      const fullResponse: AnalyzeIssueResponse = {
+        issue: {
+          number: 28000,
+          title: 'Bug report',
+          body: 'Repro steps...',
+          state: 'closed',
+          htmlUrl: 'https://github.com/facebook/react/issues/28000',
+          authorLogin: 'gaearon',
+          labels: [],
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-02T00:00:00Z',
+          closedAt: '2024-01-03T00:00:00Z',
+          isPullRequest: false,
+        },
+        repository: {
+          ownerLogin: 'facebook',
+          name: 'react',
+          fullName: 'facebook/react',
+          description: 'A JS library',
+          htmlUrl: 'https://github.com/facebook/react',
+          defaultBranch: 'main',
+          primaryLanguage: 'JavaScript',
+          stars: 200000,
+          openIssueCount: 500,
+          isArchived: false,
+        },
+        analysis: {
+          ...validAnalysis,
+          isClosedIssue: true,
+          closedIssueNotice: 'This issue is closed on GitHub. It may already be resolved.',
+        },
+      };
+
+      const result = analyzeIssueResponseSchema.safeParse(fullResponse);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.analysis.isClosedIssue).toBe(true);
+        expect(result.data.analysis.closedIssueNotice).toBeDefined();
+      }
     });
   });
 });

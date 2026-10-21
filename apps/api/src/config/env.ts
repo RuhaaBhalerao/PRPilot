@@ -22,6 +22,36 @@ const envSchema = z.object({
     .trim()
     .optional()
     .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPEN_AI_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPENAI_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPEN_AI_MODEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPENAI_MODEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPEN_AI_BASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPENAI_BASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -201,3 +201,61 @@ export type GithubIssueLabel = z.infer<typeof githubIssueLabelSchema>;
 export type GithubIssue = z.infer<typeof githubIssueSchema>;
 export type GithubRepository = z.infer<typeof githubRepositorySchema>;
 export type IssueLookupResponse = z.infer<typeof issueLookupResponseSchema>;
+
+// Evidence and Missing Information Sub-schema
+export const evidenceAndMissingInfoSchema = z.object({
+  verifiedFacts: z
+    .array(z.string())
+    .describe('Facts directly stated in the issue report, stack traces, or confirmed metadata'),
+  hypotheses: z
+    .array(z.string())
+    .describe('Analytical hypotheses or inferences derived from the available evidence'),
+  missingInformation: z
+    .array(z.string())
+    .describe('Critical information or reproduction details absent from the issue report'),
+});
+
+// File / Component Target Sub-schema
+export const fileInvestigationTargetSchema = z.object({
+  name: z.string().describe('File path, module name, or component to investigate'),
+  reason: z.string().describe('Explanation of why this file or component is relevant'),
+});
+
+// Full Issue Analysis Section Schema
+export const issueAnalysisSectionSchema = z.object({
+  problemSummary: z.string().describe('Concise description of the reported problem'),
+  expectedBehaviour: z
+    .string()
+    .describe('Expected vs observed behaviour of the system or application'),
+  rootCauseHypotheses: z
+    .array(z.string())
+    .describe('List of potential root-cause hypotheses explaining the failure'),
+  evidenceAndMissingInformation: evidenceAndMissingInfoSchema,
+  filesOrComponentsToInvestigate: z
+    .array(fileInvestigationTargetSchema)
+    .describe('Candidate source files or components to investigate'),
+  proposedFixSteps: z
+    .array(z.string())
+    .describe('Step-by-step guidance for formulating and applying a code fix'),
+  regressionTestPlan: z
+    .array(z.string())
+    .describe('Recommended test assertions and test scenarios to prevent regressions'),
+  repositoryContextAvailable: z.boolean().default(false),
+  repositoryContextLimitation: z
+    .string()
+    .describe('Explicit notice explaining that repository source files were not retrieved'),
+  isClosedIssue: z.boolean().default(false),
+  closedIssueNotice: z.string().nullable().optional(),
+});
+
+// Complete Analysis Endpoint Response Schema
+export const analyzeIssueResponseSchema = z.object({
+  issue: githubIssueSchema,
+  repository: githubRepositorySchema,
+  analysis: issueAnalysisSectionSchema,
+});
+
+export type EvidenceAndMissingInfo = z.infer<typeof evidenceAndMissingInfoSchema>;
+export type FileInvestigationTarget = z.infer<typeof fileInvestigationTargetSchema>;
+export type IssueAnalysis = z.infer<typeof issueAnalysisSectionSchema>;
+export type AnalyzeIssueResponse = z.infer<typeof analyzeIssueResponseSchema>;

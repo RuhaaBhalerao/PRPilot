@@ -1,8 +1,10 @@
 import {
   healthResponseSchema,
   issueLookupResponseSchema,
+  analyzeIssueResponseSchema,
   type HealthResponse,
   type IssueLookupResponse,
+  type AnalyzeIssueResponse,
 } from '@prpilot/shared';
 
 // API base URL configured via environment variables with fallback
@@ -89,6 +91,53 @@ export async function lookupGithubIssue(issueUrl: string): Promise<IssueLookupRe
     if (!parsed.success) {
       throw new ApiError(
         'GitHub issue lookup response failed schema validation',
+        res.status,
+        parsed.error
+      );
+    }
+
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(
+      `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify the backend service is running.`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Calls the PRPilot backend AI-powered issue analysis endpoint and validates response schema.
+ */
+export async function analyzeGithubIssue(issueUrl: string): Promise<AnalyzeIssueResponse> {
+  const url = `${API_BASE_URL}/api/v1/analyze`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ issueUrl }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const message =
+        json && typeof json.message === 'string'
+          ? json.message
+          : `Analysis failed with HTTP ${res.status}`;
+      throw new ApiError(message, res.status, json.details ?? json);
+    }
+
+    const parsed = analyzeIssueResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new ApiError(
+        'AI issue analysis response failed schema validation',
         res.status,
         parsed.error
       );
