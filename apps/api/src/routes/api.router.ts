@@ -1,14 +1,16 @@
 import { Router } from 'express';
 import { healthRouter } from './health.router.js';
+import { githubRouter } from './github.router.js';
 import { analyzeIssueRequestSchema } from '@prpilot/shared';
 
 export const apiRouter = Router();
 
-// Canonical health check: /api/v1/health
+// Canonical v1 router
 const v1Router = Router();
 v1Router.use('/health', healthRouter);
+v1Router.use('/github', githubRouter);
 
-// Phase 2 placeholder demonstrating shared Zod request validation
+// Phase 1 / Phase 2 placeholder for backward compatibility
 v1Router.post('/analyze', (req, res, next) => {
   try {
     const validated = analyzeIssueRequestSchema.parse(req.body);
