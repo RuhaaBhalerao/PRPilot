@@ -34,11 +34,20 @@ export function createAnalyzeIssueController(
       const { issue, repository } = await github.getIssueAndRepo(
         parsedUrl.owner,
         parsedUrl.repo,
-        parsedUrl.issueNumber
+        parsedUrl.issueNumber,
+        { includeComments: true }
       );
 
-      // Step 2: Formulate 7-section structured triage analysis with AI
-      const analysis = await ai.analyzeIssue(issue, repository);
+      // Step 2: Gather repository evidence using Git tree and transparent file ranking
+      const evidence = await github.gatherRepositoryEvidence(
+        parsedUrl.owner,
+        parsedUrl.repo,
+        issue,
+        repository
+      );
+
+      // Step 3: Formulate evidence-grounded 7-section structured triage analysis with AI
+      const analysis = await ai.analyzeIssue(issue, repository, evidence);
 
       const analysisResult: AnalyzeIssueResponse = {
         issue,

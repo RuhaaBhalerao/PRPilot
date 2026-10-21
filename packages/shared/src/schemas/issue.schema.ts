@@ -162,6 +162,14 @@ export const githubIssueLabelSchema = z.object({
   description: z.string().nullable().optional(),
 });
 
+// Issue Comment Schema
+export const githubIssueCommentSchema = z.object({
+  id: z.number().optional(),
+  authorLogin: z.string().nullable().optional(),
+  body: z.string(),
+  createdAt: z.string().optional(),
+});
+
 // Normalized Issue Schema
 export const githubIssueSchema = z.object({
   number: z.number().int().positive(),
@@ -171,6 +179,7 @@ export const githubIssueSchema = z.object({
   htmlUrl: z.string().url(),
   authorLogin: z.string().nullable(),
   labels: z.array(githubIssueLabelSchema),
+  comments: z.array(githubIssueCommentSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   closedAt: z.string().nullable(),
@@ -197,6 +206,7 @@ export const issueLookupResponseSchema = z.object({
   repository: githubRepositorySchema,
 });
 
+export type GithubIssueComment = z.infer<typeof githubIssueCommentSchema>;
 export type GithubIssueLabel = z.infer<typeof githubIssueLabelSchema>;
 export type GithubIssue = z.infer<typeof githubIssueSchema>;
 export type GithubRepository = z.infer<typeof githubRepositorySchema>;
@@ -215,10 +225,81 @@ export const evidenceAndMissingInfoSchema = z.object({
     .describe('Critical information or reproduction details absent from the issue report'),
 });
 
+// Retrieved Source File Sub-schema (Phase 5)
+export const retrievedSourceFileSchema = z.object({
+  path: z.string().describe('Relative path to the retrieved source file in the repository'),
+  sizeBytes: z.number().int().nonnegative().describe('File size in bytes'),
+  relevanceScore: z.number().describe('Calculated relevance ranking score'),
+  relevanceReason: z
+    .string()
+    .describe('Transparent rationale explaining why this file was selected'),
+  htmlUrl: z.string().describe('Direct GitHub URL to view the file on GitHub'),
+  excerpt: z.string().optional().describe('Short grounded code excerpt or snippet'),
+  evidenceRole: z
+    .enum(['direct_evidence', 'indirect_reference'])
+    .optional()
+    .default('direct_evidence')
+    .describe(
+      'Whether this file is direct implementation evidence or an indirect reference pattern'
+    ),
+});
+
+// Repository Evidence Sub-schema (Phase 5)
+export const repositoryEvidenceSchema = z.object({
+  status: z
+    .enum(['completed', 'partial', 'unavailable', 'insufficient_evidence'])
+    .default('unavailable')
+    .describe('Status of repository source file retrieval'),
+  evidenceQuality: z
+    .enum(['direct_grounded', 'indirect_reference', 'insufficient', 'unavailable'])
+    .optional()
+    .default('direct_grounded')
+    .describe('Quality and directness of retrieved source evidence'),
+  inspectedFileCount: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(0)
+    .describe('Number of repository source files successfully inspected'),
+  limitation: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'Reason why source retrieval was unavailable, partial, or insufficient (rate limit, truncated, size, irrelevant candidates)'
+    ),
+  treeTruncated: z
+    .boolean()
+    .default(false)
+    .describe('Whether the repository Git tree was truncated due to large repository size'),
+  externalRepositoryAdvisory: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'Advisory when the issue refers to an external repository (e.g. react.dev website vs facebook/react core library)'
+    ),
+  files: z
+    .array(retrievedSourceFileSchema)
+    .default([])
+    .describe('List of retrieved and inspected source files'),
+});
+
 // File / Component Target Sub-schema
 export const fileInvestigationTargetSchema = z.object({
   name: z.string().describe('File path, module name, or component to investigate'),
   reason: z.string().describe('Explanation of why this file or component is relevant'),
+  isGroundedEvidence: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('True if this file was actually retrieved and inspected in repository source'),
+  evidenceRole: z
+    .enum(['direct_evidence', 'indirect_reference'])
+    .optional()
+    .default('direct_evidence')
+    .describe('Whether this file or component is direct evidence or an indirect reference pattern'),
+  htmlUrl: z.string().optional().describe('Direct GitHub link if this matches an inspected file'),
 });
 
 // Full Issue Analysis Section Schema
@@ -243,7 +324,8 @@ export const issueAnalysisSectionSchema = z.object({
   repositoryContextAvailable: z.boolean().default(false),
   repositoryContextLimitation: z
     .string()
-    .describe('Explicit notice explaining that repository source files were not retrieved'),
+    .describe('Explicit notice explaining repository source retrieval status and limitations'),
+  repositoryEvidence: repositoryEvidenceSchema.optional(),
   isClosedIssue: z.boolean().default(false),
   closedIssueNotice: z.string().nullable().optional(),
 });
@@ -289,6 +371,8 @@ export const analysisHistoryListResponseSchema = z.object({
 
 export type EvidenceAndMissingInfo = z.infer<typeof evidenceAndMissingInfoSchema>;
 export type FileInvestigationTarget = z.infer<typeof fileInvestigationTargetSchema>;
+export type RetrievedSourceFile = z.infer<typeof retrievedSourceFileSchema>;
+export type RepositoryEvidence = z.infer<typeof repositoryEvidenceSchema>;
 export type IssueAnalysis = z.infer<typeof issueAnalysisSectionSchema>;
 export type AnalyzeIssueResponse = z.infer<typeof analyzeIssueResponseSchema>;
 export type PersistedAnalysis = z.infer<typeof persistedAnalysisSchema>;

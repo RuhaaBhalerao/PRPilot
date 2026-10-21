@@ -10,6 +10,8 @@ import {
   issueAnalysisSectionSchema,
   analyzeIssueResponseSchema,
   type AnalyzeIssueResponse,
+  retrievedSourceFileSchema,
+  repositoryEvidenceSchema,
 } from '../src/index.js';
 
 describe('Shared Schemas', () => {
@@ -344,6 +346,82 @@ describe('Shared Schemas', () => {
       if (result.success) {
         expect(result.data.analysis.isClosedIssue).toBe(true);
         expect(result.data.analysis.closedIssueNotice).toBeDefined();
+      }
+    });
+  });
+
+  describe('Phase 5 Schemas: retrievedSourceFileSchema & repositoryEvidenceSchema', () => {
+    it('validates a valid retrievedSourceFileSchema object', () => {
+      const validFile = {
+        path: 'src/index.ts',
+        sizeBytes: 1024,
+        relevanceScore: 125,
+        relevanceReason: 'Explicit path referenced in issue',
+        htmlUrl: 'https://github.com/facebook/react/blob/main/src/index.ts',
+        excerpt: '1: export const App = () => null;',
+      };
+
+      const result = retrievedSourceFileSchema.safeParse(validFile);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.path).toBe('src/index.ts');
+        expect(result.data.relevanceScore).toBe(125);
+      }
+    });
+
+    it('validates repositoryEvidenceSchema with completed and partial statuses', () => {
+      const completedEvidence = {
+        status: 'completed',
+        inspectedFileCount: 2,
+        limitation: null,
+        treeTruncated: false,
+        files: [
+          {
+            path: 'src/app.ts',
+            sizeBytes: 500,
+            relevanceScore: 80,
+            relevanceReason: 'Keyword match',
+            htmlUrl: 'https://github.com/facebook/react/blob/main/src/app.ts',
+          },
+        ],
+      };
+
+      const result = repositoryEvidenceSchema.safeParse(completedEvidence);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.status).toBe('completed');
+        expect(result.data.inspectedFileCount).toBe(2);
+      }
+    });
+
+    it('validates repositoryEvidenceSchema with insufficient_evidence status and externalRepositoryAdvisory', () => {
+      const insufficientEvidence = {
+        status: 'insufficient_evidence',
+        inspectedFileCount: 0,
+        limitation:
+          'Repository source files were inspected, but no files met the minimum relevance threshold.',
+        treeTruncated: false,
+        externalRepositoryAdvisory:
+          'Implementation likely resides in external repository (reactjs/react.dev).',
+        files: [],
+      };
+
+      const result = repositoryEvidenceSchema.safeParse(insufficientEvidence);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.status).toBe('insufficient_evidence');
+        expect(result.data.externalRepositoryAdvisory).toContain('reactjs/react.dev');
+      }
+    });
+
+    it('validates repositoryEvidenceSchema with defaults when fields omitted', () => {
+      const result = repositoryEvidenceSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.status).toBe('unavailable');
+        expect(result.data.inspectedFileCount).toBe(0);
+        expect(result.data.treeTruncated).toBe(false);
+        expect(result.data.files).toEqual([]);
       }
     });
   });

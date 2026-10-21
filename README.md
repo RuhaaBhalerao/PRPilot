@@ -294,7 +294,7 @@ pnpm build
   - Automated tests with deterministic GitHub API mocks
 - [x] **Phase 3: AI-Powered Issue Triage Analysis**
   - Structured 7-section triage report with clear evidence vs hypotheses distinction
-  - Provider integration with OpenRouter / OpenAI
+  - Provider integration with Google AI Studio (Gemini) / OpenAI-compatible endpoint
   - Candidate files, fix steps, and regression test plan generation
   - Closed issue advisory warnings and repository context limitation notices
 - [x] **Phase 4: Persistent Analysis History (Neon PostgreSQL)**
@@ -303,7 +303,14 @@ pnpm build
   - Idempotent analysis persistence with accidental duplicate submission protection
   - `GET /api/v1/analyses` (paginated history) and `GET /api/v1/analyses/:id`
   - Frontend Analysis History page with status badges, reopen action, and URL-driven state
-- [ ] **Phase 5: Repository Investigation & Patch Synthesis**
-  - Codebase shallow clone & AST dependency indexer
+- [x] **Phase 5: Repository Intelligence & Evidence-Grounded Analysis**
+  - Git recursive tree inspection and semantic file relevance ranking
+  - Domain-specific heuristics with DevTools, compiler fixtures, and generated files filtering
+  - Generic UI keyword false-positive prevention (`button`, `code`, `icon`, etc.)
+  - Cross-repository detection and external repository advisories (e.g., `react.dev` vs `facebook/react`)
+  - Configurable minimum relevance threshold enforcement with explicit insufficient-evidence reporting
+  - Direct grounded evidence vs. indirect reference pattern distinction in API and UI
+  - Closed issue maintainer discussion analysis and intentional challenge awareness
+- [ ] **Phase 6: Patch Synthesis & Pull Request Drafting**
   - Minimal unified diff formulation & patch execution
   - Sandboxed test verification and pull request drafting

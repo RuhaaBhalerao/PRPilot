@@ -67,6 +67,14 @@ const mockAnalysisPayload: IssueAnalysis = {
 describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(githubService, 'gatherRepositoryEvidence').mockResolvedValue({
+      status: 'unavailable',
+      inspectedFileCount: 0,
+      limitation:
+        'Repository source files were not retrieved at this triage stage; file suggestions and root causes are hypotheses based on the issue description, stack traces, and metadata.',
+      treeTruncated: false,
+      files: [],
+    });
     vi.spyOn(analysisStorageService, 'saveAnalysis').mockImplementation(async (input) => ({
       id: 'a0000000-0000-0000-0000-000000000001',
       issueUrl: input.issueUrl,
@@ -143,6 +151,72 @@ describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
       );
       expect(analysis.isClosedIssue).toBe(false);
       expect(res.body.id).toBe('a0000000-0000-0000-0000-000000000001');
+    });
+
+    it('gathers repository evidence and passes it to AI and database storage', async () => {
+      vi.spyOn(githubService, 'getIssueAndRepo').mockResolvedValue({
+        issue: mockIssue,
+        repository: mockRepo,
+      });
+
+      const mockEvidence = {
+        status: 'completed' as const,
+        inspectedFileCount: 1,
+        limitation: null,
+        treeTruncated: false,
+        files: [
+          {
+            path: 'packages/react-dom/docs/useEffect.md',
+            sizeBytes: 1200,
+            relevanceScore: 120,
+            relevanceReason: 'Matches doc keyword',
+            htmlUrl:
+              'https://github.com/facebook/react/blob/main/packages/react-dom/docs/useEffect.md',
+            excerpt: '1: # useEffect\n2: ```js\n3: useEffect(() => {});\n4: ```',
+          },
+        ],
+      };
+
+      vi.spyOn(githubService, 'gatherRepositoryEvidence').mockResolvedValue(mockEvidence);
+
+      const groundedAnalysis: IssueAnalysis = {
+        ...mockAnalysisPayload,
+        repositoryContextAvailable: true,
+        repositoryContextLimitation: 'Analysis grounded in 1 retrieved repository source file(s).',
+        repositoryEvidence: mockEvidence,
+        filesOrComponentsToInvestigate: [
+          {
+            name: 'packages/react-dom/docs/useEffect.md',
+            reason: 'Contains the useEffect documentation markdown.',
+            isGroundedEvidence: true,
+            htmlUrl:
+              'https://github.com/facebook/react/blob/main/packages/react-dom/docs/useEffect.md',
+          },
+        ],
+      };
+
+      const aiSpy = vi.spyOn(aiAnalysisService, 'analyzeIssue').mockResolvedValue(groundedAnalysis);
+      const saveSpy = vi.spyOn(analysisStorageService, 'saveAnalysis');
+
+      const res = await request(app)
+        .post('/api/v1/analyze')
+        .send({ issueUrl: 'https://github.com/facebook/react/issues/27986' });
+
+      expect(res.status).toBe(200);
+      expect(aiSpy).toHaveBeenCalledWith(mockIssue, mockRepo, mockEvidence);
+      expect(saveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'completed',
+          analysisResult: expect.objectContaining({
+            analysis: expect.objectContaining({
+              repositoryContextAvailable: true,
+              repositoryEvidence: mockEvidence,
+            }),
+          }),
+        })
+      );
+      expect(res.body.analysis.repositoryEvidence.status).toBe('completed');
+      expect(res.body.analysis.filesOrComponentsToInvestigate[0].isGroundedEvidence).toBe(true);
     });
 
     it('returns 502 Bad Gateway when database persistence fails deliberately', async () => {
@@ -358,12 +432,13 @@ describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 401,
-        json: async () => ({ error: { message: 'Incorrect API key provided' } }),
+        text: async () => JSON.stringify({ error: { message: 'Incorrect API key provided' } }),
       });
 
       const service = new AiAnalysisService({
-        apiKey: 'sk-bad-key',
+        apiKey: 'AIzaSyBadKey',
         fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 0,
       });
 
       await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
@@ -371,20 +446,184 @@ describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
       );
     });
 
-    it('throws RateLimitExceededError when AI provider rate limits the request (429)', async () => {
+    it('throws BadGatewayError when AI provider fails with 403 forbidden error', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
-        status: 429,
-        json: async () => ({ error: { message: 'Rate limit exceeded' } }),
+        status: 403,
+        text: async () =>
+          JSON.stringify({ error: { message: 'API key not valid. Please pass a valid API key.' } }),
       });
 
       const service = new AiAnalysisService({
-        apiKey: 'sk-test-key',
+        apiKey: 'AIzaSyForbiddenKey',
         fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 0,
+      });
+
+      await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
+        'AI provider authentication failed'
+      );
+    });
+
+    it('throws RateLimitExceededError when AI provider rate limits or exhausts quota (429)', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        text: async () =>
+          JSON.stringify({
+            error: {
+              code: 429,
+              message: 'Resource has been exhausted (e.g. check quota).',
+              status: 'RESOURCE_EXHAUSTED',
+            },
+          }),
+      });
+
+      const service = new AiAnalysisService({
+        apiKey: 'AIzaSyQuotaExhaustedKey',
+        fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 0,
+        retryDelayMs: 0,
       });
 
       await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
         'AI provider rate limit reached'
+      );
+    });
+
+    it('throws BadGatewayError indicating model not found when provider returns 404', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () =>
+          JSON.stringify({
+            error: {
+              code: 404,
+              message: 'models/gemini-invalid is not found for API version v1beta',
+              status: 'NOT_FOUND',
+            },
+          }),
+      });
+
+      const service = new AiAnalysisService({
+        apiKey: 'AIzaSyValidKey',
+        model: 'gemini-invalid',
+        fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 0,
+      });
+
+      await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
+        "Configured Gemini model 'gemini-invalid' was not found"
+      );
+    });
+
+    it('retries on transient 503 high-demand error with backoff and succeeds on retry', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          text: async () =>
+            JSON.stringify([
+              {
+                error: {
+                  code: 503,
+                  message:
+                    'This model is currently experiencing high demand. Please try again later.',
+                  status: 'UNAVAILABLE',
+                },
+              },
+            ]),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    problemSummary: 'Recovered after 503 retry',
+                    expectedBehaviour: 'Expected behaviour',
+                    rootCauseHypotheses: ['Hypothesis after retry'],
+                    evidenceAndMissingInformation: {
+                      verifiedFacts: ['Fact 1'],
+                      hypotheses: ['Hypothesis 1'],
+                      missingInformation: ['None'],
+                    },
+                    filesOrComponentsToInvestigate: [{ name: 'src/fix.ts', reason: 'Fixed' }],
+                    proposedFixSteps: ['Step 1'],
+                    regressionTestPlan: ['Test 1'],
+                  }),
+                },
+              },
+            ],
+          }),
+        });
+
+      const service = new AiAnalysisService({
+        apiKey: 'AIzaSyValidKey',
+        fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 2,
+        retryDelayMs: 1,
+      });
+
+      const result = await service.analyzeIssue(mockIssue, mockRepo);
+      expect(result.problemSummary).toBe('Recovered after 503 retry');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws BadGatewayError when transient 503 retries are exhausted', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: async () =>
+          JSON.stringify({
+            error: {
+              code: 503,
+              message: 'This model is currently experiencing high demand.',
+              status: 'UNAVAILABLE',
+            },
+          }),
+      });
+
+      const service = new AiAnalysisService({
+        apiKey: 'AIzaSyValidKey',
+        fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 1,
+        retryDelayMs: 1,
+      });
+
+      await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
+        'AI provider service is temporarily unavailable (HTTP 503)'
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('correctly parses array-wrapped error payloads returned by Google AI Studio Gemini API', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () =>
+          JSON.stringify([
+            {
+              error: {
+                code: 400,
+                message: 'Invalid argument: response_format schema is invalid',
+                status: 'INVALID_ARGUMENT',
+              },
+            },
+          ]),
+      });
+
+      const service = new AiAnalysisService({
+        apiKey: 'AIzaSyValidKey',
+        fetchFn: mockFetch as unknown as typeof fetch,
+        maxRetries: 0,
+      });
+
+      await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
+        'Invalid argument: response_format schema is invalid'
       );
     });
 
@@ -395,17 +634,81 @@ describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
       });
 
       const service = new AiAnalysisService({
-        apiKey: 'sk-test-key',
+        apiKey: 'AIzaSyValidKey',
         fetchFn: mockFetch as unknown as typeof fetch,
+        timeoutMs: 45000,
       });
 
       await expect(service.analyzeIssue(mockIssue, mockRepo)).rejects.toThrow(
-        'Upstream AI provider request timed out'
+        'Upstream AI provider request timed out after 45s'
       );
     });
 
+    it('configures Google AI Studio Gemini OpenAI endpoint and model by default', async () => {
+      let requestedUrl = '';
+      let requestedOptions: RequestInit | undefined;
+
+      const mockFetch = vi.fn().mockImplementation(async (url, options) => {
+        requestedUrl = String(url);
+        requestedOptions = options as RequestInit;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    problemSummary: 'Gemini problem summary',
+                    expectedBehaviour: 'Expected behaviour',
+                    rootCauseHypotheses: ['Hypothesis 1'],
+                    evidenceAndMissingInformation: {
+                      verifiedFacts: ['Fact 1'],
+                      hypotheses: ['Hypothesis 1'],
+                      missingInformation: ['None'],
+                    },
+                    filesOrComponentsToInvestigate: [{ name: 'src/index.ts', reason: 'Entry' }],
+                    proposedFixSteps: ['Step 1'],
+                    regressionTestPlan: ['Test 1'],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      });
+
+      const geminiKey = 'AIzaSyFakeGeminiKeyForTesting';
+      const service = new AiAnalysisService({
+        apiKey: geminiKey,
+        fetchFn: mockFetch as unknown as typeof fetch,
+      });
+
+      expect(service.baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
+      expect(service.model).toBe('gemini-2.5-flash');
+
+      const result = await service.analyzeIssue(mockIssue, mockRepo);
+      expect(result.problemSummary).toBe('Gemini problem summary');
+
+      // Verify endpoint and request structure
+      expect(requestedUrl).toBe(
+        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
+      );
+      expect(requestedOptions).toBeDefined();
+
+      const headers = requestedOptions?.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe(`Bearer ${geminiKey}`);
+      expect(headers['Content-Type']).toBe('application/json');
+
+      const body = JSON.parse(requestedOptions?.body as string);
+      expect(body.model).toBe('gemini-2.5-flash');
+      expect(body.response_format).toEqual({ type: 'json_object' });
+      expect(body.max_tokens).toBe(4000);
+      expect(body.temperature).toBe(0.2);
+    });
+
     it('never leaks API key secrets in error messages or responses', async () => {
-      const secretKey = 'sk-or-v1-super-secret-key-999';
+      const secretKey = 'AIzaSySuperSecretKey999';
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
