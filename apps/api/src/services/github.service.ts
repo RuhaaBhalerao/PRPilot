@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { IssueLookupResponse, GithubIssue, GithubRepository } from '@prpilot/shared';
+import { env } from '../config/env.js';
 import {
   NotFoundError,
   UnprocessableEntityError,
@@ -11,17 +12,25 @@ import {
 
 export interface GithubServiceOptions {
   octokit?: Octokit;
+  token?: string;
   timeoutMs?: number;
 }
 
 export class GithubService {
   private octokit: Octokit;
+  readonly isTokenConfigured: boolean;
 
   constructor(options: GithubServiceOptions = {}) {
+    const rawToken = options.token !== undefined ? options.token : env.GITHUB_TOKEN;
+    const cleanToken =
+      typeof rawToken === 'string' && rawToken.trim().length > 0 ? rawToken.trim() : undefined;
+
+    this.isTokenConfigured = Boolean(cleanToken);
+
     this.octokit =
       options.octokit ||
       new Octokit({
-        auth: process.env.GITHUB_TOKEN || undefined,
+        auth: cleanToken,
         request: {
           timeout: options.timeoutMs ?? 10000,
         },
@@ -133,30 +142,101 @@ export class GithubService {
       };
 
       const status = err.status;
-      const headers = err.response?.headers || {};
-      const remainingLimit = headers['x-ratelimit-remaining'];
-      const resetTime = headers['x-ratelimit-reset'];
 
-      // Rate limit detection
-      const isRateLimit =
+      // Case-insensitive header lookup helper
+      const getHeader = (headerName: string): string | undefined => {
+        if (!err.response?.headers) return undefined;
+        const lower = headerName.toLowerCase();
+        for (const [key, val] of Object.entries(err.response.headers)) {
+          if (key.toLowerCase() === lower && typeof val === 'string') {
+            return val;
+          }
+        }
+        return undefined;
+      };
+
+      const remainingLimit = getHeader('x-ratelimit-remaining');
+      const resetTime = getHeader('x-ratelimit-reset');
+      const retryAfter = getHeader('retry-after');
+
+      const responseDataMessage =
+        typeof err.response?.data === 'object' &&
+        err.response.data !== null &&
+        'message' in err.response.data &&
+        typeof (err.response.data as { message: unknown }).message === 'string'
+          ? (err.response.data as { message: string }).message
+          : '';
+      const combinedMessage = `${err.message || ''} ${responseDataMessage}`.toLowerCase();
+
+      // Differentiate Secondary vs Primary Rate Limits
+      // Secondary: status 429, or mentions "secondary rate", or has "retry-after" header
+      const isSecondaryRateLimit =
         status === 429 ||
-        (status === 403 &&
-          (remainingLimit === '0' ||
-            (err.message && err.message.toLowerCase().includes('rate limit')) ||
-            (err.message && err.message.toLowerCase().includes('secondary rate'))));
+        combinedMessage.includes('secondary rate') ||
+        (status === 403 && retryAfter !== undefined);
 
-      if (isRateLimit) {
+      // Primary: status 403 with remaining 0, or message explicitly says rate limit exceeded
+      const isPrimaryRateLimit =
+        status === 403 &&
+        (remainingLimit === '0' ||
+          combinedMessage.includes('api rate limit exceeded') ||
+          combinedMessage.includes('rate limit'));
+
+      if (isSecondaryRateLimit || isPrimaryRateLimit) {
         let resetDateString: string | undefined;
-        if (resetTime) {
+        let retryAfterSeconds: number | undefined;
+
+        if (retryAfter) {
+          const parsedSeconds = parseInt(retryAfter, 10);
+          if (!isNaN(parsedSeconds) && parsedSeconds > 0) {
+            retryAfterSeconds = parsedSeconds;
+            resetDateString = new Date(Date.now() + parsedSeconds * 1000).toISOString();
+          } else {
+            const parsedTimestamp = Date.parse(retryAfter);
+            if (!isNaN(parsedTimestamp) && parsedTimestamp > Date.now()) {
+              retryAfterSeconds = Math.max(1, Math.ceil((parsedTimestamp - Date.now()) / 1000));
+              resetDateString = new Date(parsedTimestamp).toISOString();
+            }
+          }
+        }
+
+        if (!resetDateString && resetTime) {
           const resetSeconds = parseInt(resetTime, 10);
-          if (!isNaN(resetSeconds)) {
+          if (!isNaN(resetSeconds) && resetSeconds > 0) {
             resetDateString = new Date(resetSeconds * 1000).toISOString();
           }
         }
 
+        if (isSecondaryRateLimit) {
+          const resetFormatted = resetDateString
+            ? ` Throttled until ${new Date(resetDateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}.`
+            : ' Please wait a few minutes before retrying.';
+
+          throw new RateLimitExceededError(
+            `GitHub API secondary rate limit triggered.${resetFormatted} Repeated requests before the cooldown period may prolong the block.`,
+            {
+              rateLimitType: 'secondary',
+              resetAt: resetDateString,
+              ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+            }
+          );
+        }
+
+        // Primary rate limit
+        const resetFormatted = resetDateString
+          ? ` Limit will reset at ${new Date(resetDateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}.`
+          : '';
+
+        const tokenAdvice = !this.isTokenConfigured
+          ? ' To raise the hourly limit from 60 to 5,000 requests, configure an optional server-side GITHUB_TOKEN.'
+          : '';
+
         throw new RateLimitExceededError(
-          'GitHub API rate limit exceeded. Please wait before retrying.',
-          resetDateString ? { resetAt: resetDateString } : undefined
+          `GitHub API primary rate limit exceeded.${resetFormatted} Please wait until the reset time before retrying.${tokenAdvice}`,
+          {
+            rateLimitType: 'primary',
+            resetAt: resetDateString,
+          }
         );
       }
 

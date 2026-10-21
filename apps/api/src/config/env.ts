@@ -17,6 +17,11 @@ const envSchema = z.object({
     }),
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  GITHUB_TOKEN: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

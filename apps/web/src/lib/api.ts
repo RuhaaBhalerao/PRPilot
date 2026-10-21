@@ -82,7 +82,7 @@ export async function lookupGithubIssue(issueUrl: string): Promise<IssueLookupRe
         json && typeof json.message === 'string'
           ? json.message
           : `GitHub lookup failed with HTTP ${res.status}`;
-      throw new ApiError(message, res.status, json);
+      throw new ApiError(message, res.status, json.details ?? json);
     }
 
     const parsed = issueLookupResponseSchema.safeParse(json);

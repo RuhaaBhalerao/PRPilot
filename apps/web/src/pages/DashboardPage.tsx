@@ -11,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
   XCircle,
+  Clock,
 } from 'lucide-react';
 import { analyzeIssueRequestSchema } from '@prpilot/shared';
 import { useGithubIssueLookup } from '../hooks/useGithubIssueLookup';
@@ -186,44 +187,84 @@ export const DashboardPage: React.FC = () => {
         </form>
 
         {/* API Error Notification with Retry option */}
-        {apiError && (
-          <div
-            className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 animate-in fade-in"
-            role="alert"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2.5">
-                <XCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="font-semibold text-rose-900">
-                    {apiError.status === 404
-                      ? 'Issue or Repository Not Found'
-                      : apiError.status === 422
-                        ? 'Unsupported Resource (Pull Request)'
-                        : apiError.status === 429
-                          ? 'GitHub Rate Limit Reached'
-                          : apiError.status === 502 || apiError.status === 504
-                            ? 'Upstream GitHub Connection Error'
-                            : 'Unable to Analyze Issue'}
-                  </h4>
-                  <p className="leading-relaxed text-rose-700">{apiError.message}</p>
+        {apiError &&
+          (() => {
+            const errorDetails = apiError.details as
+              | {
+                  rateLimitType?: 'primary' | 'secondary';
+                  resetAt?: string;
+                  retryAfterSeconds?: number;
+                }
+              | undefined;
+
+            const isRateLimit = apiError.status === 429;
+            const isSecondary = errorDetails?.rateLimitType === 'secondary';
+
+            return (
+              <div
+                className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 animate-in fade-in"
+                role="alert"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <XCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5">
+                      <h4 className="font-semibold text-rose-900">
+                        {apiError.status === 404
+                          ? 'Issue or Repository Not Found'
+                          : apiError.status === 422
+                            ? 'Unsupported Resource (Pull Request)'
+                            : isRateLimit
+                              ? isSecondary
+                                ? 'GitHub Secondary Rate Limit Triggered'
+                                : 'GitHub API Rate Limit Reached'
+                              : apiError.status === 502 || apiError.status === 504
+                                ? 'Upstream GitHub Connection Error'
+                                : 'Unable to Analyze Issue'}
+                      </h4>
+                      <p className="leading-relaxed text-rose-700">{apiError.message}</p>
+
+                      {/* Rate Limit Cooldown Details & Guidance */}
+                      {isRateLimit && (
+                        <div className="pt-1 space-y-1">
+                          {errorDetails?.resetAt && (
+                            <div className="inline-flex items-center gap-1.5 rounded bg-rose-100/90 border border-rose-200 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                              <Clock className="h-3 w-3 text-rose-600" />
+                              <span>
+                                Reset time:{' '}
+                                {new Date(errorDetails.resetAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-rose-600 leading-normal">
+                            {errorDetails?.resetAt
+                              ? 'Please wait until the reset time before retrying. Repeated requests during the cooldown window may prolong throttling.'
+                              : 'Please wait before retrying. Repeated requests during the cooldown window may prolong throttling.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {canRetry && (
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      disabled={isPending}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 shadow-xs hover:bg-rose-50 transition-colors shrink-0"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Retry</span>
+                    </button>
+                  )}
                 </div>
               </div>
-
-              {canRetry && (
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  disabled={isPending}
-                  className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 shadow-xs hover:bg-rose-50 transition-colors shrink-0"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                  <span>Retry</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+            );
+          })()}
       </div>
 
       {/* Successful Issue Lookup Interface */}

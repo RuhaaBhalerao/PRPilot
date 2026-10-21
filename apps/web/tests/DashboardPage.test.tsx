@@ -247,4 +247,125 @@ describe('DashboardPage frontend integration', () => {
 
     expect(lookupSpy).toHaveBeenCalledTimes(2);
   });
+
+  it('renders primary rate limit error banner with reset time and cooldown guidance', async () => {
+    const futureReset = new Date(Date.now() + 3600000).toISOString();
+    const formattedResetTime = new Date(futureReset).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    vi.spyOn(api, 'lookupGithubIssue').mockRejectedValueOnce(
+      new ApiError(
+        `GitHub API primary rate limit exceeded. Limit will reset at ${formattedResetTime}. Please wait until the reset time before retrying.`,
+        429,
+        {
+          rateLimitType: 'primary',
+          resetAt: futureReset,
+        }
+      )
+    );
+
+    renderWithClient(<DashboardPage />);
+
+    const input = screen.getByLabelText(/GitHub Issue URL/i);
+    fireEvent.change(input, {
+      target: { value: 'https://github.com/facebook/react/issues/28000' },
+    });
+
+    const submitBtn = screen.getByRole('button', { name: /Analyze issue/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /GitHub API Rate Limit Reached/i })).toBeDefined();
+      expect(
+        screen.getByText(new RegExp(`Reset time:\\s*${formattedResetTime}`, 'i'))
+      ).toBeDefined();
+      expect(screen.getByText(/GitHub API primary rate limit exceeded/i)).toBeDefined();
+      expect(
+        screen.getByText(/Repeated requests during the cooldown window may prolong throttling/i)
+      ).toBeDefined();
+      expect(screen.getByRole('button', { name: /Retry/i })).toBeDefined();
+    });
+  });
+
+  it('renders secondary rate limit error banner with specific title and cautionary guidance', async () => {
+    const futureReset = new Date(Date.now() + 120000).toISOString();
+    const formattedResetTime = new Date(futureReset).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    vi.spyOn(api, 'lookupGithubIssue').mockRejectedValueOnce(
+      new ApiError(
+        `GitHub API secondary rate limit triggered. Throttled until ${formattedResetTime}. Repeated requests before the cooldown period may prolong the block.`,
+        429,
+        {
+          rateLimitType: 'secondary',
+          resetAt: futureReset,
+          retryAfterSeconds: 120,
+        }
+      )
+    );
+
+    renderWithClient(<DashboardPage />);
+
+    const input = screen.getByLabelText(/GitHub Issue URL/i);
+    fireEvent.change(input, {
+      target: { value: 'https://github.com/facebook/react/issues/28000' },
+    });
+
+    const submitBtn = screen.getByRole('button', { name: /Analyze issue/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: /GitHub Secondary Rate Limit Triggered/i })
+      ).toBeDefined();
+      expect(
+        screen.getByText(new RegExp(`Reset time:\\s*${formattedResetTime}`, 'i'))
+      ).toBeDefined();
+      expect(
+        screen.getByText(/Repeated requests during the cooldown window may prolong throttling/i)
+      ).toBeDefined();
+      expect(screen.getByRole('button', { name: /Retry/i })).toBeDefined();
+    });
+  });
+
+  it('renders rate limit guidance gracefully when reset time header is not provided', async () => {
+    vi.spyOn(api, 'lookupGithubIssue').mockRejectedValueOnce(
+      new ApiError(
+        'GitHub API secondary rate limit triggered. Please wait a few minutes before retrying.',
+        429,
+        {
+          rateLimitType: 'secondary',
+        }
+      )
+    );
+
+    renderWithClient(<DashboardPage />);
+
+    const input = screen.getByLabelText(/GitHub Issue URL/i);
+    fireEvent.change(input, {
+      target: { value: 'https://github.com/facebook/react/issues/28000' },
+    });
+
+    const submitBtn = screen.getByRole('button', { name: /Analyze issue/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: /GitHub Secondary Rate Limit Triggered/i })
+      ).toBeDefined();
+      expect(
+        screen.getByText(
+          /Please wait before retrying\. Repeated requests during the cooldown window may prolong throttling\./i
+        )
+      ).toBeDefined();
+      expect(screen.queryByText(/Reset time:/i)).toBeNull();
+      expect(screen.getByRole('button', { name: /Retry/i })).toBeDefined();
+    });
+  });
 });
