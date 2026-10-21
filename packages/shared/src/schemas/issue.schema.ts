@@ -250,12 +250,47 @@ export const issueAnalysisSectionSchema = z.object({
 
 // Complete Analysis Endpoint Response Schema
 export const analyzeIssueResponseSchema = z.object({
+  id: z.string().optional(),
   issue: githubIssueSchema,
   repository: githubRepositorySchema,
   analysis: issueAnalysisSectionSchema,
+});
+
+// Persisted Analysis Record Schema
+export const persistedAnalysisSchema = z.object({
+  id: z.string(),
+  issueUrl: z.string().url(),
+  issueTitle: z.string(),
+  repository: z.string(),
+  analysisResult: analyzeIssueResponseSchema,
+  status: z.enum(['completed', 'failed']),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+// Analysis History List Summary Item Schema
+export const analysisHistoryItemSchema = z.object({
+  id: z.string(),
+  issueUrl: z.string().url(),
+  issueTitle: z.string(),
+  repository: z.string(),
+  status: z.enum(['completed', 'failed']),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+// Analysis History List Endpoint Response Schema
+export const analysisHistoryListResponseSchema = z.object({
+  items: z.array(analysisHistoryItemSchema),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
 });
 
 export type EvidenceAndMissingInfo = z.infer<typeof evidenceAndMissingInfoSchema>;
 export type FileInvestigationTarget = z.infer<typeof fileInvestigationTargetSchema>;
 export type IssueAnalysis = z.infer<typeof issueAnalysisSectionSchema>;
 export type AnalyzeIssueResponse = z.infer<typeof analyzeIssueResponseSchema>;
+export type PersistedAnalysis = z.infer<typeof persistedAnalysisSchema>;
+export type AnalysisHistoryItem = z.infer<typeof analysisHistoryItemSchema>;
+export type AnalysisHistoryListResponse = z.infer<typeof analysisHistoryListResponseSchema>;

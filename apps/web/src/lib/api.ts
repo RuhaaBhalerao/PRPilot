@@ -2,9 +2,13 @@ import {
   healthResponseSchema,
   issueLookupResponseSchema,
   analyzeIssueResponseSchema,
+  analysisHistoryListResponseSchema,
+  persistedAnalysisSchema,
   type HealthResponse,
   type IssueLookupResponse,
   type AnalyzeIssueResponse,
+  type AnalysisHistoryListResponse,
+  type PersistedAnalysis,
 } from '@prpilot/shared';
 
 // API base URL configured via environment variables with fallback
@@ -150,6 +154,83 @@ export async function analyzeGithubIssue(issueUrl: string): Promise<AnalyzeIssue
     }
     throw new ApiError(
       `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify the backend service is running.`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Fetches recent analysis history from the backend.
+ */
+export async function fetchAnalysesHistory(
+  limit: number = 20,
+  offset: number = 0
+): Promise<AnalysisHistoryListResponse> {
+  const url = `${API_BASE_URL}/api/v1/analyses?limit=${limit}&offset=${offset}`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message =
+        json && typeof json.message === 'string'
+          ? json.message
+          : `Failed to fetch history (HTTP ${res.status})`;
+      throw new ApiError(message, res.status);
+    }
+
+    const parsed = analysisHistoryListResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new ApiError(
+        'Analysis history response failed schema validation',
+        res.status,
+        parsed.error
+      );
+    }
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify backend service is running.`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Fetches a single persisted analysis record by ID.
+ */
+export async function fetchAnalysisById(id: string): Promise<PersistedAnalysis> {
+  const url = `${API_BASE_URL}/api/v1/analyses/${encodeURIComponent(id)}`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message =
+        json && typeof json.message === 'string'
+          ? json.message
+          : `Analysis record '${id}' not found`;
+      throw new ApiError(message, res.status);
+    }
+
+    const parsed = persistedAnalysisSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new ApiError('Analysis record failed schema validation', res.status, parsed.error);
+    }
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify backend service is running.`,
       undefined,
       error
     );

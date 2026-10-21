@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   ArrowRight,
@@ -12,9 +14,12 @@ import {
   RefreshCw,
   XCircle,
   Clock,
+  Database,
+  RotateCcw,
 } from 'lucide-react';
 import { analyzeIssueRequestSchema } from '@prpilot/shared';
 import { useGithubIssueAnalysis } from '../hooks/useGithubIssueAnalysis';
+import { fetchAnalysisById } from '../lib/api';
 import { IssueSummaryCard } from '../components/github/IssueSummaryCard';
 import { RepositorySummaryCard } from '../components/github/RepositorySummaryCard';
 import { IssueAnalysisCard } from '../components/github/IssueAnalysisCard';
@@ -25,6 +30,8 @@ const EXAMPLE_URL = 'https://github.com/facebook/react/issues/27986';
 export const DashboardPage: React.FC = () => {
   const [urlInput, setUrlInput] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const savedId = searchParams.get('id');
 
   const {
     mutate: analyzeIssue,
@@ -33,6 +40,24 @@ export const DashboardPage: React.FC = () => {
     error: apiError,
     reset: resetAnalysis,
   } = useGithubIssueAnalysis();
+
+  const {
+    data: savedAnalysisRecord,
+    isLoading: isSavedLoading,
+    error: savedError,
+  } = useQuery({
+    queryKey: ['savedAnalysis', savedId],
+    queryFn: () => (savedId ? fetchAnalysisById(savedId) : null),
+    enabled: Boolean(savedId),
+  });
+
+  useEffect(() => {
+    if (savedAnalysisRecord?.issueUrl && !urlInput) {
+      setUrlInput(savedAnalysisRecord.issueUrl);
+    }
+  }, [savedAnalysisRecord, urlInput]);
+
+  const activeResult = analysisResult ?? savedAnalysisRecord?.analysisResult ?? null;
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUrlInput(e.target.value);
@@ -45,12 +70,18 @@ export const DashboardPage: React.FC = () => {
     setUrlInput(EXAMPLE_URL);
     setValidationError(null);
     resetAnalysis();
+    if (savedId) {
+      setSearchParams({});
+    }
   };
 
   const handleReset = () => {
     setUrlInput('');
     setValidationError(null);
     resetAnalysis();
+    if (savedId) {
+      setSearchParams({});
+    }
   };
 
   const performLookup = (url: string) => {
@@ -70,7 +101,10 @@ export const DashboardPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isPending) return;
+    if (isPending || isSavedLoading) return;
+    if (savedId) {
+      setSearchParams({});
+    }
     performLookup(urlInput);
   };
 
@@ -290,15 +324,83 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
+      {/* Loading Saved Analysis from Database */}
+      {savedId && isSavedLoading && (
+        <div
+          className="rounded-xl border border-brand-200 bg-brand-50/50 p-6 text-center space-y-3 animate-in fade-in"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Loading Saved Analysis from Database...
+            </h3>
+            <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto leading-relaxed">
+              Retrieving persisted 7-section triage report from Neon PostgreSQL.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Loading Saved Analysis */}
+      {savedId && savedError && (
+        <div
+          className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 space-y-2 animate-in fade-in"
+          role="alert"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-semibold text-rose-900">
+              <AlertCircle className="h-4 w-4 text-rose-600" />
+              <span>Failed to load saved analysis</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchParams({})}
+              className="text-xs text-rose-700 hover:underline font-medium"
+            >
+              Dismiss
+            </button>
+          </div>
+          <p className="text-rose-700">
+            {savedError instanceof Error ? savedError.message : 'Analysis record not found.'}
+          </p>
+        </div>
+      )}
+
+      {/* Reopened from Database Notification Badge */}
+      {savedAnalysisRecord && !analysisResult && (
+        <div className="flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50/70 px-4 py-2.5 text-xs text-brand-900">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-brand-600 shrink-0" />
+            <span>
+              Reopened saved analysis from PostgreSQL (Record ID:{' '}
+              <span className="font-mono font-medium">{savedAnalysisRecord.id.slice(0, 8)}...</span>
+              )
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="inline-flex items-center gap-1 text-xs text-brand-700 hover:text-brand-900 font-medium hover:underline"
+          >
+            <RotateCcw className="h-3 w-3" />
+            <span>Clear</span>
+          </button>
+        </div>
+      )}
+
       {/* Successful Issue Lookup & AI Analysis Interface */}
-      {analysisResult && (
+      {activeResult && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <IssueSummaryCard
-            issue={analysisResult.issue}
-            repoFullName={analysisResult.repository.fullName}
+            issue={activeResult.issue}
+            repoFullName={activeResult.repository.fullName}
           />
-          <RepositorySummaryCard repository={analysisResult.repository} />
-          <IssueAnalysisCard analysis={analysisResult.analysis} />
+          <RepositorySummaryCard repository={activeResult.repository} />
+          <IssueAnalysisCard analysis={activeResult.analysis} />
           <AnalysisReadinessCard onReset={handleReset} />
         </div>
       )}

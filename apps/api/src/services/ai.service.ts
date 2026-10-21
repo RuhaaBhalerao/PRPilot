@@ -1,7 +1,11 @@
 import type { GithubIssue, GithubRepository, IssueAnalysis } from '@prpilot/shared';
 import { issueAnalysisSectionSchema } from '@prpilot/shared';
 import { env } from '../config/env.js';
-import { BadGatewayError, GatewayTimeoutError, RateLimitExceededError } from '../errors/httpError.js';
+import {
+  BadGatewayError,
+  GatewayTimeoutError,
+  RateLimitExceededError,
+} from '../errors/httpError.js';
 
 export interface AiServiceOptions {
   apiKey?: string;

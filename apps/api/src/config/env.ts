@@ -52,6 +52,11 @@ const envSchema = z.object({
     .trim()
     .optional()
     .transform((val) => (val && val.length > 0 ? val : undefined)),
+  DATABASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

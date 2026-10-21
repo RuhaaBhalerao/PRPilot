@@ -1,11 +1,21 @@
 import type { Request, Response, NextFunction } from 'express';
-import { analyzeIssueRequestSchema, parseGithubIssueUrl } from '@prpilot/shared';
+import {
+  analyzeIssueRequestSchema,
+  parseGithubIssueUrl,
+  type AnalyzeIssueResponse,
+} from '@prpilot/shared';
 import { githubService, GithubService } from '../services/github.service.js';
 import { aiAnalysisService, AiAnalysisService } from '../services/ai.service.js';
+import {
+  analysisStorageService,
+  AnalysisStorageService,
+} from '../services/analysisStorage.service.js';
+import { BadGatewayError } from '../errors/httpError.js';
 
 export function createAnalyzeIssueController(
   github: GithubService = githubService,
-  ai: AiAnalysisService = aiAnalysisService
+  ai: AiAnalysisService = aiAnalysisService,
+  storage: AnalysisStorageService = analysisStorageService
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -30,7 +40,32 @@ export function createAnalyzeIssueController(
       // Step 2: Formulate 7-section structured triage analysis with AI
       const analysis = await ai.analyzeIssue(issue, repository);
 
+      const analysisResult: AnalyzeIssueResponse = {
+        issue,
+        repository,
+        analysis,
+      };
+
+      // Step 3: Persist analysis to PostgreSQL database
+      let savedId: string | undefined;
+      try {
+        const saved = await storage.saveAnalysis({
+          issueUrl: issue.htmlUrl,
+          issueTitle: issue.title,
+          repository: repository.fullName,
+          analysisResult,
+          status: 'completed',
+        });
+        savedId = saved.id;
+      } catch (dbError) {
+        // Handle database failures deliberately; do not silently report as saved if insert failed
+        throw new BadGatewayError(
+          `Failed to persist analysis to database: ${dbError instanceof Error ? dbError.message : 'Database error'}`
+        );
+      }
+
       res.status(200).json({
+        id: savedId,
         issue,
         repository,
         analysis,

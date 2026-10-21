@@ -3,6 +3,7 @@ import request from 'supertest';
 import { app } from '../src/app.js';
 import { githubService } from '../src/services/github.service.js';
 import { aiAnalysisService, AiAnalysisService } from '../src/services/ai.service.js';
+import { analysisStorageService } from '../src/services/analysisStorage.service.js';
 import type { IssueAnalysis, GithubIssue, GithubRepository } from '@prpilot/shared';
 
 const mockIssue: GithubIssue = {
@@ -66,6 +67,16 @@ const mockAnalysisPayload: IssueAnalysis = {
 describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(analysisStorageService, 'saveAnalysis').mockImplementation(async (input) => ({
+      id: 'a0000000-0000-0000-0000-000000000001',
+      issueUrl: input.issueUrl,
+      issueTitle: input.issueTitle,
+      repository: input.repository,
+      analysisResult: input.analysisResult,
+      status: input.status ?? 'completed',
+      createdAt: '2024-02-16T12:00:00.000Z',
+      updatedAt: '2024-02-16T12:00:00.000Z',
+    }));
   });
 
   describe('Input Validation', () => {
@@ -131,6 +142,27 @@ describe('POST /api/v1/analyze (AI-Powered Issue Triage)', () => {
         'Repository source files were not retrieved'
       );
       expect(analysis.isClosedIssue).toBe(false);
+      expect(res.body.id).toBe('a0000000-0000-0000-0000-000000000001');
+    });
+
+    it('returns 502 Bad Gateway when database persistence fails deliberately', async () => {
+      vi.spyOn(githubService, 'getIssueAndRepo').mockResolvedValue({
+        issue: mockIssue,
+        repository: mockRepo,
+      });
+
+      vi.spyOn(aiAnalysisService, 'analyzeIssue').mockResolvedValue(mockAnalysisPayload);
+
+      vi.spyOn(analysisStorageService, 'saveAnalysis').mockRejectedValue(
+        new Error('Connection terminated unexpectedly')
+      );
+
+      const res = await request(app)
+        .post('/api/v1/analyze')
+        .send({ issueUrl: 'https://github.com/facebook/react/issues/27986' });
+
+      expect(res.status).toBe(502);
+      expect(res.body.message).toContain('Failed to persist analysis to database');
     });
 
     it('handles closed issues normally while attaching closed issue advisory warning', async () => {

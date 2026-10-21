@@ -3,12 +3,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { DashboardPage } from '../src/pages/DashboardPage';
 import * as api from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
 import type { AnalyzeIssueResponse } from '@prpilot/shared';
 
-function renderWithClient(ui: React.ReactElement) {
+function renderWithClient(ui: React.ReactElement, initialEntries: string[] = ['/']) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -16,7 +17,11 @@ function renderWithClient(ui: React.ReactElement) {
     },
   });
 
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>
+    </QueryClientProvider>
+  );
 }
 
 const mockAnalysisData: AnalyzeIssueResponse = {
@@ -390,6 +395,29 @@ describe('DashboardPage frontend integration', () => {
       ).toBeDefined();
       expect(screen.queryByText(/Reset time:/i)).toBeNull();
       expect(screen.getByRole('button', { name: /Retry/i })).toBeDefined();
+    });
+  });
+
+  it('reopens and renders saved analysis from database when id query param is present', async () => {
+    const mockPersisted = {
+      id: '55555555-6666-7777-8888-999999999999',
+      issueUrl: 'https://github.com/facebook/react/issues/28000',
+      issueTitle: 'Fix transition race condition in fiber',
+      repository: 'facebook/react',
+      analysisResult: mockAnalysisData,
+      status: 'completed' as const,
+      createdAt: '2024-01-10T10:00:00Z',
+      updatedAt: '2024-01-10T10:00:00Z',
+    };
+
+    vi.spyOn(api, 'fetchAnalysisById').mockResolvedValue(mockPersisted);
+
+    renderWithClient(<DashboardPage />, ['/?id=55555555-6666-7777-8888-999999999999']);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Reopened saved analysis from PostgreSQL/i)).toBeDefined();
+      expect(screen.getByText('Fix transition race condition in fiber')).toBeDefined();
+      expect(screen.getByText(/1\. Problem Summary/i)).toBeDefined();
     });
   });
 });

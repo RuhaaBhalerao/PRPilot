@@ -272,10 +272,10 @@ pnpm build
 
 ## Current Limitations
 
-- **Public Repositories Only**: Phase 2 exclusively supports public GitHub repositories. Private repositories and enterprise GitHub instances are not supported.
+- **Public Repositories Only**: Exclusively supports public GitHub repositories. Private repositories and enterprise GitHub instances are not supported.
 - **Unauthenticated Rate Limits**: When running without an optional `GITHUB_TOKEN`, GitHub limits requests to 60 per hour per IP. Setting `GITHUB_TOKEN` in `apps/api/.env` increases this limit to 5,000 per hour.
-- **Pull Requests Excluded**: Phase 2 specifically analyzes GitHub issues; pull request URLs are intentionally rejected with HTTP 422.
-- **No Autonomous Patching Yet**: In adherence to the phased roadmap, AI code exploration, Gemini patch generation, and sandboxed execution are intentionally deferred to Phase 3.
+- **Pull Requests Excluded**: PRPilot specifically analyzes GitHub issues; pull request URLs are intentionally rejected with HTTP 422.
+- **Triage Stage Limitation**: At the current triage analysis stage, repository source files are not cloned. File locations and root causes are analytical hypotheses based on issue description, stack traces, and repository metadata.
 
 ---
 
@@ -292,10 +292,18 @@ pnpm build
   - Normalized issue and repository data contracts
   - Dashboard integration with real-time metadata display and error retry handling
   - Automated tests with deterministic GitHub API mocks
-- [ ] **Phase 3: AI Codebase Investigation & Patch Synthesis**
+- [x] **Phase 3: AI-Powered Issue Triage Analysis**
+  - Structured 7-section triage report with clear evidence vs hypotheses distinction
+  - Provider integration with OpenRouter / OpenAI
+  - Candidate files, fix steps, and regression test plan generation
+  - Closed issue advisory warnings and repository context limitation notices
+- [x] **Phase 4: Persistent Analysis History (Neon PostgreSQL)**
+  - Reusable PostgreSQL connection module with `@neondatabase/serverless`
+  - Automated schema migration for `analyses` table and optimized indexes
+  - Idempotent analysis persistence with accidental duplicate submission protection
+  - `GET /api/v1/analyses` (paginated history) and `GET /api/v1/analyses/:id`
+  - Frontend Analysis History page with status badges, reopen action, and URL-driven state
+- [ ] **Phase 5: Repository Investigation & Patch Synthesis**
   - Codebase shallow clone & AST dependency indexer
-  - Google Gemini 1.5 Pro code triage & root-cause analysis
-  - Minimal unified diff formulation & regression test assertions
-- [ ] **Phase 4: Sandboxed Verification & PR Automation**
-  - Isolated Docker container test verification
-  - Automated pull request drafting and verification badges
+  - Minimal unified diff formulation & patch execution
+  - Sandboxed test verification and pull request drafting
