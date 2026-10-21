@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
+import { HttpError } from '../errors/httpError.js';
 
 export function errorHandler(
   err: unknown,
@@ -8,6 +9,16 @@ export function errorHandler(
   // Express identifies error handlers by having exactly 4 parameters, so `_next` is preserved
   _next: NextFunction
 ): void {
+  // Handle custom HttpErrors
+  if (err instanceof HttpError) {
+    res.status(err.statusCode).json({
+      error: err.error,
+      message: err.message,
+      ...(err.details !== undefined ? { details: err.details } : {}),
+    });
+    return;
+  }
+
   // Handle Zod validation errors
   if (err instanceof ZodError) {
     res.status(400).json({

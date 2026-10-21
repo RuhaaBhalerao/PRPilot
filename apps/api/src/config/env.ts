@@ -17,6 +17,71 @@ const envSchema = z.object({
     }),
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  GITHUB_TOKEN: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  GEMINI_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  GEMINI_MODEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  GEMINI_BASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  AI_TIMEOUT_MS: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && !isNaN(Number(val)) ? Number(val) : undefined)),
+  MIN_RELEVANCE_SCORE: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && !isNaN(Number(val)) ? Number(val) : undefined)),
+  OPEN_AI_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPENAI_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPEN_AI_MODEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPENAI_MODEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPEN_AI_BASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  OPENAI_BASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
+  DATABASE_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

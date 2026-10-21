@@ -1,6 +1,8 @@
 import { app } from './app.js';
 import { env } from './config/env.js';
 
+import { db } from './db/connection.js';
+
 const server = app.listen(env.PORT, () => {
   console.log(`=========================================`);
   console.log(`🚀 PRPilot API server running`);
@@ -8,6 +10,25 @@ const server = app.listen(env.PORT, () => {
   console.log(`🩺 Health: http://localhost:${env.PORT}/api/v1/health`);
   console.log(`🌐 Allowed Origin: ${env.WEB_ORIGIN}`);
   console.log(`🌱 Environment: ${env.NODE_ENV}`);
+  if (db.isConfigured) {
+    db.verifyConnection()
+      .then(async (connected) => {
+        if (connected) {
+          console.log(`🗄️ Database: Connected (Neon PostgreSQL)`);
+          await db.initSchema();
+        } else {
+          console.warn(`⚠️ Database: Connection check returned false`);
+        }
+      })
+      .catch((err) => {
+        console.warn(
+          `⚠️ Database: Initialization failed:`,
+          err instanceof Error ? err.message : 'Unknown error'
+        );
+      });
+  } else {
+    console.log(`🗄️ Database: Not configured (DATABASE_URL unset)`);
+  }
   console.log(`=========================================`);
 });
 

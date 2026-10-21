@@ -12,7 +12,22 @@ export function createApp() {
   // Security & Cross-Origin Resource Sharing
   app.use(
     corsMiddleware({
-      origin: [env.WEB_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+      origin: (requestOrigin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+        if (!requestOrigin) {
+          return callback(null, true);
+        }
+
+        // Allow configured origin and local dev ports (5173, 5174, etc.)
+        if (
+          requestOrigin === env.WEB_ORIGIN ||
+          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)
+        ) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`CORS blocked for origin: ${requestOrigin}`));
+      },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       credentials: true,

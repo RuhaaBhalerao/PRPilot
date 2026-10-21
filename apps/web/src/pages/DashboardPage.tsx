@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   ArrowRight,
-  CheckCircle2,
   AlertCircle,
   FileCode2,
   Terminal,
@@ -10,61 +11,116 @@ import {
   Bot,
   Sparkles,
   Loader2,
+  RefreshCw,
+  XCircle,
+  Clock,
+  Database,
+  RotateCcw,
 } from 'lucide-react';
-import {
-  analyzeIssueRequestSchema,
-  parseGithubIssueUrl,
-  type ParsedGithubIssueUrl,
-} from '@prpilot/shared';
+import { analyzeIssueRequestSchema } from '@prpilot/shared';
+import { useGithubIssueAnalysis } from '../hooks/useGithubIssueAnalysis';
+import { fetchAnalysisById } from '../lib/api';
+import { IssueSummaryCard } from '../components/github/IssueSummaryCard';
+import { RepositorySummaryCard } from '../components/github/RepositorySummaryCard';
+import { IssueAnalysisCard } from '../components/github/IssueAnalysisCard';
+import { AnalysisReadinessCard } from '../components/github/AnalysisReadinessCard';
 
-const EXAMPLE_URL = 'https://github.com/facebook/react/issues/28000';
+const EXAMPLE_URL = 'https://github.com/facebook/react/issues/27986';
 
 export const DashboardPage: React.FC = () => {
   const [urlInput, setUrlInput] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionSuccess, setSubmissionSuccess] = useState<ParsedGithubIssueUrl | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const savedId = searchParams.get('id');
+
+  const {
+    mutate: analyzeIssue,
+    data: analysisResult,
+    isPending,
+    error: apiError,
+    reset: resetAnalysis,
+  } = useGithubIssueAnalysis();
+
+  const {
+    data: savedAnalysisRecord,
+    isLoading: isSavedLoading,
+    error: savedError,
+  } = useQuery({
+    queryKey: ['savedAnalysis', savedId],
+    queryFn: () => (savedId ? fetchAnalysisById(savedId) : null),
+    enabled: Boolean(savedId),
+  });
+
+  useEffect(() => {
+    if (savedAnalysisRecord?.issueUrl && !urlInput) {
+      setUrlInput(savedAnalysisRecord.issueUrl);
+    }
+  }, [savedAnalysisRecord, urlInput]);
+
+  const activeResult = analysisResult ?? savedAnalysisRecord?.analysisResult ?? null;
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUrlInput(e.target.value);
     if (validationError) {
       setValidationError(null);
     }
-    if (submissionSuccess) {
-      setSubmissionSuccess(null);
-    }
   };
 
   const fillExample = () => {
     setUrlInput(EXAMPLE_URL);
     setValidationError(null);
-    setSubmissionSuccess(null);
+    resetAnalysis();
+    if (savedId) {
+      setSearchParams({});
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleReset = () => {
+    setUrlInput('');
+    setValidationError(null);
+    resetAnalysis();
+    if (savedId) {
+      setSearchParams({});
+    }
+  };
 
+  const performLookup = (url: string) => {
     // Validate using the shared Zod schema
-    const parseResult = analyzeIssueRequestSchema.safeParse({ issueUrl: urlInput });
+    const parseResult = analyzeIssueRequestSchema.safeParse({ issueUrl: url });
 
     if (!parseResult.success) {
       const firstError =
         parseResult.error.issues[0]?.message || 'Please enter a valid GitHub issue URL';
       setValidationError(firstError);
-      setSubmissionSuccess(null);
       return;
     }
 
     setValidationError(null);
-    setIsSubmitting(true);
-
-    // Simulate quick validation pass to demonstrate loading UI pattern
-    setTimeout(() => {
-      const parsed = parseGithubIssueUrl(urlInput);
-      setSubmissionSuccess(parsed);
-      setIsSubmitting(false);
-    }, 600);
+    analyzeIssue(url);
   };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isPending || isSavedLoading) return;
+    if (savedId) {
+      setSearchParams({});
+    }
+    performLookup(urlInput);
+  };
+
+  const handleRetry = () => {
+    if (urlInput.trim()) {
+      performLookup(urlInput);
+    }
+  };
+
+  // Determine if error qualifies for a retry action
+  const canRetry =
+    apiError &&
+    (apiError.status === 502 ||
+      apiError.status === 504 ||
+      apiError.status === 429 ||
+      apiError.status === undefined);
 
   return (
     <div className="space-y-8">
@@ -98,7 +154,8 @@ export const DashboardPage: React.FC = () => {
               <button
                 type="button"
                 onClick={fillExample}
-                className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline focus:outline-none"
+                disabled={isPending}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline focus:outline-none disabled:opacity-50"
               >
                 Try an example URL
               </button>
@@ -113,26 +170,26 @@ export const DashboardPage: React.FC = () => {
                 value={urlInput}
                 onChange={handleUrlChange}
                 placeholder="https://github.com/owner/repository/issues/123"
-                className={`block w-full rounded-lg border py-3 pl-10 pr-32 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition-colors ${
+                className={`block w-full rounded-lg border py-3 pl-10 pr-36 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition-colors ${
                   validationError
                     ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-200'
                     : 'border-slate-300 focus:border-brand-500 focus:ring-brand-100'
                 }`}
                 aria-describedby={validationError ? 'url-validation-error' : 'url-helper-text'}
-                disabled={isSubmitting}
+                disabled={isPending}
                 autoComplete="off"
                 spellCheck={false}
               />
               <div className="absolute inset-y-1.5 right-1.5 flex items-center">
                 <button
                   type="submit"
-                  disabled={isSubmitting || !urlInput.trim()}
+                  disabled={isPending || !urlInput.trim()}
                   className="inline-flex h-full items-center gap-1.5 rounded-md bg-brand-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
-                  {isSubmitting ? (
+                  {isPending ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Validating...</span>
+                      <span>Analyzing issue...</span>
                     </>
                   ) : (
                     <>
@@ -144,7 +201,7 @@ export const DashboardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Validation Feedback */}
+            {/* Client-side Validation Error */}
             {validationError && (
               <div
                 id="url-validation-error"
@@ -156,53 +213,197 @@ export const DashboardPage: React.FC = () => {
               </div>
             )}
 
-            {!validationError && (
+            {!validationError && !apiError && (
               <p id="url-helper-text" className="text-xs text-slate-500">
-                Enter any public GitHub issue link. Private repositories are not supported in this
-                version.
+                Enter any public GitHub issue link. Private repositories are not supported.
               </p>
             )}
           </div>
         </form>
 
-        {/* Phase 1 Completion Feedback Banner (Honest Milestone Status) */}
-        {submissionSuccess && (
-          <div className="mt-5 rounded-lg border border-brand-200 bg-brand-50/60 p-4 animate-in fade-in">
-            <div className="flex items-start gap-3">
-              <div className="rounded-full bg-brand-100 p-1 text-brand-700 mt-0.5">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-semibold text-brand-900">
-                    URL Validated: {submissionSuccess.owner}/{submissionSuccess.repo} #
-                    {submissionSuccess.issueNumber}
-                  </h4>
-                  <span className="rounded-full bg-brand-200/70 px-2 py-0.5 text-[10px] font-semibold text-brand-800">
-                    Phase 1 Milestone
-                  </span>
+        {/* API Error Notification with Retry option */}
+        {apiError &&
+          (() => {
+            const errorDetails = apiError.details as
+              | {
+                  rateLimitType?: 'primary' | 'secondary';
+                  resetAt?: string;
+                  retryAfterSeconds?: number;
+                }
+              | undefined;
+
+            const isRateLimit = apiError.status === 429;
+            const isSecondary = errorDetails?.rateLimitType === 'secondary';
+
+            return (
+              <div
+                className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 animate-in fade-in"
+                role="alert"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <XCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5">
+                      <h4 className="font-semibold text-rose-900">
+                        {apiError.status === 404
+                          ? 'Issue or Repository Not Found'
+                          : apiError.status === 422
+                            ? 'Unsupported Resource (Pull Request)'
+                            : isRateLimit
+                              ? isSecondary
+                                ? 'GitHub Secondary Rate Limit Triggered'
+                                : 'GitHub API Rate Limit Reached'
+                              : apiError.status === 502 || apiError.status === 504
+                                ? 'Upstream Provider Error'
+                                : 'Unable to Analyze Issue'}
+                      </h4>
+                      <p className="leading-relaxed text-rose-700">{apiError.message}</p>
+
+                      {/* Rate Limit Cooldown Details & Guidance */}
+                      {isRateLimit && (
+                        <div className="pt-1 space-y-1">
+                          {errorDetails?.resetAt && (
+                            <div className="inline-flex items-center gap-1.5 rounded bg-rose-100/90 border border-rose-200 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                              <Clock className="h-3 w-3 text-rose-600" />
+                              <span>
+                                Reset time:{' '}
+                                {new Date(errorDetails.resetAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-rose-600 leading-normal">
+                            {errorDetails?.resetAt
+                              ? 'Please wait until the reset time before retrying. Repeated requests during the cooldown window may prolong throttling.'
+                              : 'Please wait before retrying. Repeated requests during the cooldown window may prolong throttling.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {canRetry && (
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      disabled={isPending}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 shadow-xs hover:bg-rose-50 transition-colors shrink-0"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Retry</span>
+                    </button>
+                  )}
                 </div>
-                <p className="text-xs text-slate-700 leading-relaxed">
-                  The URL format was validated against the shared Zod schema. Full automated
-                  repository cloning, Gemini triage, patch synthesis, and sandboxed test execution
-                  will be activated in <strong>Phase 2</strong>.
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-600 font-mono">
-                  <span className="rounded bg-white px-2 py-0.5 border border-slate-200">
-                    Owner: {submissionSuccess.owner}
-                  </span>
-                  <span className="rounded bg-white px-2 py-0.5 border border-slate-200">
-                    Repo: {submissionSuccess.repo}
-                  </span>
-                  <span className="rounded bg-white px-2 py-0.5 border border-slate-200">
-                    Issue: #{submissionSuccess.issueNumber}
-                  </span>
-                </div>
               </div>
-            </div>
-          </div>
-        )}
+            );
+          })()}
       </div>
+
+      {/* Pending Analysis Progress Card */}
+      {isPending && (
+        <div
+          className="rounded-xl border border-brand-200 bg-brand-50/50 p-6 text-center space-y-3 animate-in fade-in"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Analyzing Issue with PRPilot AI...
+            </h3>
+            <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto leading-relaxed">
+              Fetching issue metadata, evaluating problem description, and formulating 7-section
+              structured triage analysis.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Saved Analysis from Database */}
+      {savedId && isSavedLoading && (
+        <div
+          className="rounded-xl border border-brand-200 bg-brand-50/50 p-6 text-center space-y-3 animate-in fade-in"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Loading Saved Analysis from Database...
+            </h3>
+            <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto leading-relaxed">
+              Retrieving persisted 7-section triage report from Neon PostgreSQL.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Loading Saved Analysis */}
+      {savedId && savedError && (
+        <div
+          className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 space-y-2 animate-in fade-in"
+          role="alert"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-semibold text-rose-900">
+              <AlertCircle className="h-4 w-4 text-rose-600" />
+              <span>Failed to load saved analysis</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchParams({})}
+              className="text-xs text-rose-700 hover:underline font-medium"
+            >
+              Dismiss
+            </button>
+          </div>
+          <p className="text-rose-700">
+            {savedError instanceof Error ? savedError.message : 'Analysis record not found.'}
+          </p>
+        </div>
+      )}
+
+      {/* Reopened from Database Notification Badge */}
+      {savedAnalysisRecord && !analysisResult && (
+        <div className="flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50/70 px-4 py-2.5 text-xs text-brand-900">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-brand-600 shrink-0" />
+            <span>
+              Reopened saved analysis from PostgreSQL (Record ID:{' '}
+              <span className="font-mono font-medium">{savedAnalysisRecord.id.slice(0, 8)}...</span>
+              )
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="inline-flex items-center gap-1 text-xs text-brand-700 hover:text-brand-900 font-medium hover:underline"
+          >
+            <RotateCcw className="h-3 w-3" />
+            <span>Clear</span>
+          </button>
+        </div>
+      )}
+
+      {/* Successful Issue Lookup & AI Analysis Interface */}
+      {activeResult && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <IssueSummaryCard
+            issue={activeResult.issue}
+            repoFullName={activeResult.repository.fullName}
+          />
+          <RepositorySummaryCard repository={activeResult.repository} />
+          <IssueAnalysisCard analysis={activeResult.analysis} />
+          <AnalysisReadinessCard onReset={handleReset} />
+        </div>
+      )}
 
       {/* Architecture & Pipeline Preview */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -220,7 +421,8 @@ export const DashboardPage: React.FC = () => {
             </div>
             <div className="text-xs font-semibold text-slate-900">1. Issue Triage</div>
             <p className="text-[11px] text-slate-500 leading-normal">
-              Parses issue description, stack traces, and community discussion for key context.
+              Retrieves real GitHub issue metadata, discussion thread, labels, and repository
+              context.
             </p>
           </div>
 
@@ -257,33 +459,36 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Analyses Section (Honest Empty State) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Recent Analyses</h2>
-          <span className="text-xs text-slate-500">0 sessions</span>
-        </div>
+      {/* Recent Analyses Section */}
+      {!analysisResult && !isPending && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Recent Analyses</h2>
+            <span className="text-xs text-slate-500">0 sessions</span>
+          </div>
 
-        {/* Useful empty state without fabricated data */}
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-12 px-6 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 mb-3">
-            <Terminal className="h-6 w-6" />
-          </div>
-          <h3 className="text-sm font-semibold text-slate-900">No analyses run yet</h3>
-          <p className="mt-1 max-w-sm text-xs text-slate-500 leading-relaxed">
-            When you run an issue analysis in Phase 2, repository breakdown, AI patch suggestions,
-            diff comparisons, and sandbox verification logs will appear here.
-          </p>
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              onClick={fillExample}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-sm"
-            >
-              <span>Load example issue above</span>
-            </button>
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-12 px-6 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 mb-3">
+              <Terminal className="h-6 w-6" />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-900">No analyses run yet</h3>
+            <p className="mt-1 max-w-sm text-xs text-slate-500 leading-relaxed">
+              When you enter a public GitHub issue above, verified issue details and repository
+              metadata will appear here. Full AI patch suggestions and sandbox verification will
+              follow in Phase 3.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={fillExample}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-sm"
+              >
+                <span>Load example issue above</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

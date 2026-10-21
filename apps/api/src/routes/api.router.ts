@@ -1,26 +1,22 @@
 import { Router } from 'express';
 import { healthRouter } from './health.router.js';
-import { analyzeIssueRequestSchema } from '@prpilot/shared';
+import { githubRouter } from './github.router.js';
+import { analyzeIssueController } from '../controllers/analyze.controller.js';
+import { historyController } from '../controllers/history.controller.js';
 
 export const apiRouter = Router();
 
-// Canonical health check: /api/v1/health
+// Canonical v1 router
 const v1Router = Router();
 v1Router.use('/health', healthRouter);
+v1Router.use('/github', githubRouter);
 
-// Phase 2 placeholder demonstrating shared Zod request validation
-v1Router.post('/analyze', (req, res, next) => {
-  try {
-    const validated = analyzeIssueRequestSchema.parse(req.body);
-    res.status(501).json({
-      error: 'Not Implemented',
-      message: 'GitHub issue analysis agent is scheduled for Phase 2',
-      requestedUrl: validated.issueUrl,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+// AI-powered GitHub issue analysis endpoint
+v1Router.post('/analyze', analyzeIssueController);
+
+// Analysis history endpoints
+v1Router.get('/analyses', historyController.listAnalyses);
+v1Router.get('/analyses/:id', historyController.getAnalysisById);
 
 // Mount /api/v1
 apiRouter.use('/v1', v1Router);
