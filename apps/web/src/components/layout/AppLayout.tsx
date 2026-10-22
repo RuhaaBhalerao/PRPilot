@@ -30,13 +30,13 @@ export const AppLayout: React.FC = () => {
       name: 'Analysis History',
       to: '/history',
       icon: History,
-      badge: 'Phase 2',
+      badge: null,
     },
     {
       name: 'Settings',
       to: '/settings',
       icon: Settings,
-      badge: 'Phase 2',
+      badge: null,
     },
   ];
 
@@ -82,7 +82,7 @@ export const AppLayout: React.FC = () => {
             </div>
             <div className="flex flex-col">
               <span className="text-base font-semibold tracking-tight text-slate-900">PRPilot</span>
-              <span className="text-xs text-slate-500 font-mono">v0.1.0 • Phase 1</span>
+              <span className="text-xs text-slate-500 font-mono">v0.7.0</span>
             </div>
           </NavLink>
           <button
@@ -144,9 +144,9 @@ export const AppLayout: React.FC = () => {
             <div className="flex items-start gap-2.5">
               <Info className="h-4 w-4 text-brand-600 mt-0.5 shrink-0" />
               <div className="text-xs text-slate-600 leading-relaxed">
-                <span className="font-semibold text-slate-800">Public Repositories:</span> This
-                version supports inspecting public GitHub repositories. Automated triage & patch
-                creation arrive in Phase 2.
+                <span className="font-semibold text-slate-800">Public Repositories:</span> Inspect
+                public GitHub issues, explore source evidence, and synthesize verified patches and
+                regression tests.
               </div>
             </div>
           </div>
@@ -201,8 +201,8 @@ export const AppLayout: React.FC = () => {
 
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-brand-500"></span>
-              <span>Phase 1: Project Foundation</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+              <span>System Active</span>
             </div>
             <a
               href="https://github.com"

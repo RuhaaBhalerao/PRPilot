@@ -23,6 +23,7 @@ import { fetchAnalysisById } from '../lib/api';
 import { IssueSummaryCard } from '../components/github/IssueSummaryCard';
 import { RepositorySummaryCard } from '../components/github/RepositorySummaryCard';
 import { IssueAnalysisCard } from '../components/github/IssueAnalysisCard';
+import { PatchReviewCard } from '../components/github/PatchReviewCard';
 import { AnalysisReadinessCard } from '../components/github/AnalysisReadinessCard';
 
 const EXAMPLE_URL = 'https://github.com/facebook/react/issues/27986';
@@ -134,9 +135,9 @@ export const DashboardPage: React.FC = () => {
           Open-source contributions, simplified.
         </h1>
         <p className="max-w-3xl text-base text-slate-600 leading-relaxed">
-          PRPilot investigates public GitHub issues, explores the target repository, formulates
-          targeted code fixes using AI, generates regression tests, and validates patches in a
-          restricted sandbox.
+          PRPilot investigates public GitHub issues, explores repository source evidence, generates
+          minimal AI patches and regression tests, and deterministically validates diffs in-memory
+          against authentic repository snapshots.
         </p>
       </div>
 
@@ -401,6 +402,12 @@ export const DashboardPage: React.FC = () => {
           />
           <RepositorySummaryCard repository={activeResult.repository} />
           <IssueAnalysisCard analysis={activeResult.analysis} />
+          <PatchReviewCard
+            analysisId={savedAnalysisRecord?.id || activeResult.id}
+            issueUrl={activeResult.issue.htmlUrl}
+            isClosed={activeResult.issue.state === 'closed'}
+            initialPatch={savedAnalysisRecord?.patchResult}
+          />
           <AnalysisReadinessCard onReset={handleReset} />
         </div>
       )}
@@ -451,9 +458,10 @@ export const DashboardPage: React.FC = () => {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
               <ShieldCheck className="h-4 w-4" />
             </div>
-            <div className="text-xs font-semibold text-slate-900">4. Sandbox Verification</div>
+            <div className="text-xs font-semibold text-slate-900">4. In-Memory Validation</div>
             <p className="text-[11px] text-slate-500 leading-normal">
-              Executes the test suite in a restricted container to guarantee zero regressions.
+              Performs deterministic dry-run diff application against repository snapshots (isolated
+              container sandbox planned).
             </p>
           </div>
         </div>
@@ -473,9 +481,8 @@ export const DashboardPage: React.FC = () => {
             </div>
             <h3 className="text-sm font-semibold text-slate-900">No analyses run yet</h3>
             <p className="mt-1 max-w-sm text-xs text-slate-500 leading-relaxed">
-              When you enter a public GitHub issue above, verified issue details and repository
-              metadata will appear here. Full AI patch suggestions and sandbox verification will
-              follow in Phase 3.
+              When you enter a public GitHub issue above, verified issue details, repository
+              metadata, grounded source evidence, and generated patches will appear here.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <button

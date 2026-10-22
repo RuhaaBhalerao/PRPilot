@@ -11,6 +11,12 @@ export class HttpError extends Error {
   }
 }
 
+export class BadRequestError extends HttpError {
+  constructor(message = 'Bad Request', details?: unknown) {
+    super(400, 'Bad Request', message, details);
+  }
+}
+
 export class NotFoundError extends HttpError {
   constructor(message = 'Resource not found', details?: unknown) {
     super(404, 'Not Found', message, details);

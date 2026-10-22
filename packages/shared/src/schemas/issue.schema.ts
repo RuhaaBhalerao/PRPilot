@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { patchGenerationResponseSchema } from './patch.schema.js';
 
 export interface ParsedGithubIssueUrl {
   owner: string;
@@ -345,6 +346,7 @@ export const persistedAnalysisSchema = z.object({
   issueTitle: z.string(),
   repository: z.string(),
   analysisResult: analyzeIssueResponseSchema,
+  patchResult: patchGenerationResponseSchema.optional(),
   status: z.enum(['completed', 'failed']),
   createdAt: z.string(),
   updatedAt: z.string(),

@@ -94,6 +94,11 @@ export class DatabaseService {
     await this.query(`
       CREATE INDEX IF NOT EXISTS idx_analyses_repository ON analyses (repository)
     `);
+
+    // Phase 6 migration: patch_result column for AI-generated patches and regression tests
+    await this.query(`
+      ALTER TABLE analyses ADD COLUMN IF NOT EXISTS patch_result JSONB
+    `);
   }
 }
 

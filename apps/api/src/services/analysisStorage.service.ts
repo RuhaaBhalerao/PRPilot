@@ -3,6 +3,7 @@ import type {
   PersistedAnalysis,
   AnalysisHistoryItem,
   AnalysisHistoryListResponse,
+  PatchGenerationResponse,
 } from '@prpilot/shared';
 import { db, DatabaseService } from '../db/connection.js';
 
@@ -12,6 +13,7 @@ interface RawAnalysisRow {
   issue_title: string;
   repository: string;
   analysis_result: AnalyzeIssueResponse;
+  patch_result?: PatchGenerationResponse | string | null;
   status: 'completed' | 'failed';
   created_at: Date | string;
   updated_at: Date | string;
@@ -96,7 +98,7 @@ export class AnalysisStorageService {
     }
 
     const rows = await this.database.query<RawAnalysisRow>(
-      `SELECT id, issue_url, issue_title, repository, analysis_result, status, created_at, updated_at
+      `SELECT id, issue_url, issue_title, repository, analysis_result, patch_result, status, created_at, updated_at
        FROM analyses
        WHERE id = $1`,
       [id]
@@ -107,6 +109,31 @@ export class AnalysisStorageService {
     }
 
     return this.mapToPersistedAnalysis(rows[0]);
+  }
+
+  /**
+   * Updates an existing analysis record with the generated patch result.
+   */
+  async savePatchResult(analysisId: string, patchResult: PatchGenerationResponse): Promise<void> {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(analysisId)) {
+      throw new Error(`Invalid analysis ID format: ${analysisId}`);
+    }
+
+    await this.database.query(
+      `UPDATE analyses
+       SET patch_result = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [JSON.stringify(patchResult), analysisId]
+    );
+  }
+
+  /**
+   * Retrieves just the patch result associated with an analysis ID.
+   */
+  async getPatchByAnalysisId(analysisId: string): Promise<PatchGenerationResponse | null> {
+    const analysis = await this.getAnalysisById(analysisId);
+    return analysis?.patchResult ?? null;
   }
 
   /**
@@ -164,12 +191,26 @@ export class AnalysisStorageService {
       result.id = row.id;
     }
 
+    let patchResult: PatchGenerationResponse | undefined;
+    if (row.patch_result) {
+      if (typeof row.patch_result === 'string') {
+        try {
+          patchResult = JSON.parse(row.patch_result);
+        } catch {
+          patchResult = undefined;
+        }
+      } else {
+        patchResult = row.patch_result as PatchGenerationResponse;
+      }
+    }
+
     return {
       id: row.id,
       issueUrl: row.issue_url,
       issueTitle: row.issue_title,
       repository: row.repository,
       analysisResult: result,
+      patchResult,
       status: row.status,
       createdAt: new Date(row.created_at).toISOString(),
       updatedAt: new Date(row.updated_at).toISOString(),

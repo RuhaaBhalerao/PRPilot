@@ -237,161 +237,7 @@ Labels: ${issue.labels.map((l) => l.name).join(', ') || 'None'}
 ISSUE DESCRIPTION (UNTRUSTED DATA):
 ${issue.body || 'No description provided by the issue author.'}${discussionContext}${evidenceContext}`;
 
-    let response: Response | undefined;
-    let lastError: Error | undefined;
-    const overallDeadline = Date.now() + this.timeoutMs;
-
-    // Bounded retry loop for transient provider errors (503, 429, 502, 504)
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      const remainingTime = overallDeadline - Date.now();
-      if (remainingTime <= 0) {
-        throw new GatewayTimeoutError(
-          `Upstream AI provider request timed out after ${Math.round(this.timeoutMs / 1000)}s.`
-        );
-      }
-
-      if (attempt > 0) {
-        const delay = this.retryDelayMs * Math.pow(2, attempt - 1);
-        await new Promise((resolve) => setTimeout(resolve, Math.min(delay, remainingTime)));
-      }
-
-      const controller = new AbortController();
-      const currentAttemptTimeout = Math.min(this.timeoutMs, remainingTime);
-      const timeoutId = setTimeout(() => controller.abort(), currentAttemptTimeout);
-
-      try {
-        response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: this.model,
-            max_tokens: 4000,
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-          }),
-          signal: controller.signal,
-        });
-      } catch (err: unknown) {
-        clearTimeout(timeoutId);
-
-        const error = err as { name?: string; message?: string };
-        const isTimeout =
-          error.name === 'AbortError' || (error.message && error.message.includes('aborted'));
-
-        if (isTimeout) {
-          console.error('[AI Service Error] Request timed out on attempt', attempt + 1, {
-            timeoutMs: this.timeoutMs,
-            model: this.model,
-            endpoint: this.baseUrl,
-          });
-          throw new GatewayTimeoutError(
-            `Upstream AI provider request timed out after ${Math.round(this.timeoutMs / 1000)}s.`
-          );
-        }
-
-        console.error('[AI Service Network Error]', {
-          attempt: attempt + 1,
-          name: error.name,
-          message: error.message,
-          model: this.model,
-          endpoint: this.baseUrl,
-        });
-
-        if (attempt < this.maxRetries) {
-          lastError = new BadGatewayError(
-            `Failed to connect to upstream AI provider: ${error.message || 'Network error'}`
-          );
-          continue;
-        }
-
-        throw new BadGatewayError('Failed to connect to upstream AI provider.');
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      if (response.ok) {
-        break;
-      }
-
-      // Read raw error response body and parse provider details
-      let rawErrorText = '';
-      if (typeof response.text === 'function') {
-        rawErrorText = await response.text().catch(() => '');
-      } else if (
-        typeof (response as unknown as { json?: () => Promise<unknown> }).json === 'function'
-      ) {
-        const jsonVal = await (response as unknown as { json: () => Promise<unknown> })
-          .json()
-          .catch(() => '');
-        rawErrorText = typeof jsonVal === 'string' ? jsonVal : JSON.stringify(jsonVal);
-      }
-      const errorInfo = parseProviderError(response.status, rawErrorText);
-
-      // Log actual provider error details securely (no API keys)
-      console.error('[AI Service Error]', {
-        status: errorInfo.status,
-        code: errorInfo.code,
-        errorStatus: errorInfo.errorStatus,
-        message: errorInfo.message,
-        model: this.model,
-        endpoint: this.baseUrl,
-        attempt: attempt + 1,
-      });
-
-      // Retry transient errors with backoff
-      if (attempt < this.maxRetries && isTransientStatus(response.status)) {
-        console.warn(
-          `[AI Service Warning] Transient HTTP ${response.status} from ${this.baseUrl}: ${errorInfo.message || 'Temporary service issue'}. Retrying attempt ${attempt + 2} of ${this.maxRetries + 1}...`
-        );
-        lastError = this.buildProviderHttpError(errorInfo);
-        continue;
-      }
-
-      // Non-transient errors (400, 401, 403, 404, or retries exhausted) fail immediately
-      throw this.buildProviderHttpError(errorInfo);
-    }
-
-    if (!response || !response.ok) {
-      throw lastError || new BadGatewayError('AI provider request failed.');
-    }
-
-    let payload: { choices?: Array<{ message?: { content?: string } }> };
-    try {
-      payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    } catch {
-      throw new BadGatewayError('Malformed JSON payload received from AI provider.');
-    }
-
-    const rawContent = payload.choices?.[0]?.message?.content;
-    if (!rawContent || typeof rawContent !== 'string') {
-      throw new BadGatewayError('AI provider returned an empty or missing completion message.');
-    }
-
-    // Strip markdown fences if present
-    const cleanedJson = rawContent
-      .trim()
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/, '')
-      .trim();
-
-    let parsedJson: Record<string, unknown>;
-    try {
-      parsedJson = JSON.parse(cleanedJson) as Record<string, unknown>;
-    } catch {
-      console.error(
-        '[AI Service Error] Failed to parse model output as JSON:',
-        rawContent.slice(0, 300)
-      );
-      throw new BadGatewayError('AI provider completion could not be parsed as valid JSON.');
-    }
+    const parsedJson = await this.generateJsonCompletion(systemPrompt, userPrompt);
 
     // Grounding cross-reference safety net:
     // Prevent LLM from hallucinating that an uninspected file was inspected.
@@ -507,6 +353,179 @@ ${issue.body || 'No description provided by the issue author.'}${discussionConte
     }
 
     return validated.data;
+  }
+
+  /**
+   * Sends a structured chat completion request to Gemini with bounded retries,
+   * safe timeout management, and JSON extraction.
+   */
+  async generateJsonCompletion(
+    systemPrompt: string,
+    userPrompt: string,
+    options: { maxTokens?: number; temperature?: number } = {}
+  ): Promise<Record<string, unknown>> {
+    if (!this.isConfigured || !this.apiKey) {
+      throw new BadGatewayError(
+        'AI provider is not configured. Please set GEMINI_API_KEY in apps/api/.env.'
+      );
+    }
+
+    let response: Response | undefined;
+    let lastError: Error | undefined;
+    const overallDeadline = Date.now() + this.timeoutMs;
+    const maxTokens = options.maxTokens ?? 4000;
+    const temperature = options.temperature ?? 0.2;
+
+    // Bounded retry loop for transient provider errors (503, 429, 502, 504)
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const remainingTime = overallDeadline - Date.now();
+      if (remainingTime <= 0) {
+        throw new GatewayTimeoutError(
+          `Upstream AI provider request timed out after ${Math.round(this.timeoutMs / 1000)}s.`
+        );
+      }
+
+      if (attempt > 0) {
+        const delay = this.retryDelayMs * Math.pow(2, attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, Math.min(delay, remainingTime)));
+      }
+
+      const controller = new AbortController();
+      const currentAttemptTimeout = Math.min(this.timeoutMs, remainingTime);
+      const timeoutId = setTimeout(() => controller.abort(), currentAttemptTimeout);
+
+      try {
+        response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: maxTokens,
+            temperature,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+          }),
+          signal: controller.signal,
+        });
+      } catch (err: unknown) {
+        clearTimeout(timeoutId);
+
+        const error = err as { name?: string; message?: string };
+        const isTimeout =
+          error.name === 'AbortError' || (error.message && error.message.includes('aborted'));
+
+        if (isTimeout) {
+          console.error('[AI Service Error] Request timed out on attempt', attempt + 1, {
+            timeoutMs: this.timeoutMs,
+            model: this.model,
+            endpoint: this.baseUrl,
+          });
+          throw new GatewayTimeoutError(
+            `Upstream AI provider request timed out after ${Math.round(this.timeoutMs / 1000)}s.`
+          );
+        }
+
+        console.error('[AI Service Network Error]', {
+          attempt: attempt + 1,
+          name: error.name,
+          message: error.message,
+          model: this.model,
+          endpoint: this.baseUrl,
+        });
+
+        if (attempt < this.maxRetries) {
+          lastError = new BadGatewayError(
+            `Failed to connect to upstream AI provider: ${error.message || 'Network error'}`
+          );
+          continue;
+        }
+
+        throw new BadGatewayError('Failed to connect to upstream AI provider.');
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (response.ok) {
+        break;
+      }
+
+      // Read raw error response body and parse provider details
+      let rawErrorText = '';
+      if (typeof response.text === 'function') {
+        rawErrorText = await response.text().catch(() => '');
+      } else if (
+        typeof (response as unknown as { json?: () => Promise<unknown> }).json === 'function'
+      ) {
+        const jsonVal = await (response as unknown as { json: () => Promise<unknown> })
+          .json()
+          .catch(() => '');
+        rawErrorText = typeof jsonVal === 'string' ? jsonVal : JSON.stringify(jsonVal);
+      }
+      const errorInfo = parseProviderError(response.status, rawErrorText);
+
+      // Log actual provider error details securely (no API keys)
+      console.error('[AI Service Error]', {
+        status: errorInfo.status,
+        code: errorInfo.code,
+        errorStatus: errorInfo.errorStatus,
+        message: errorInfo.message,
+        model: this.model,
+        endpoint: this.baseUrl,
+        attempt: attempt + 1,
+      });
+
+      // Retry transient errors with backoff
+      if (attempt < this.maxRetries && isTransientStatus(response.status)) {
+        console.warn(
+          `[AI Service Warning] Transient HTTP ${response.status} from ${this.baseUrl}: ${errorInfo.message || 'Temporary service issue'}. Retrying attempt ${attempt + 2} of ${this.maxRetries + 1}...`
+        );
+        lastError = this.buildProviderHttpError(errorInfo);
+        continue;
+      }
+
+      // Non-transient errors (400, 401, 403, 404, or retries exhausted) fail immediately
+      throw this.buildProviderHttpError(errorInfo);
+    }
+
+    if (!response || !response.ok) {
+      throw lastError || new BadGatewayError('AI provider request failed.');
+    }
+
+    let payload: { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    } catch {
+      throw new BadGatewayError('Malformed JSON payload received from AI provider.');
+    }
+
+    const rawContent = payload.choices?.[0]?.message?.content;
+    if (!rawContent || typeof rawContent !== 'string') {
+      throw new BadGatewayError('AI provider returned an empty or missing completion message.');
+    }
+
+    // Strip markdown fences if present
+    const cleanedJson = rawContent
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+
+    try {
+      return JSON.parse(cleanedJson) as Record<string, unknown>;
+    } catch {
+      console.error(
+        '[AI Service Error] Failed to parse model output as JSON:',
+        rawContent.slice(0, 300)
+      );
+      throw new BadGatewayError('AI provider completion could not be parsed as valid JSON.');
+    }
   }
 
   /**
