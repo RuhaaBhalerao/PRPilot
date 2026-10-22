@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: prpilot-api
+    runtime: node
+    plan: free
+    buildCommand: pnpm install && pnpm --filter @prpilot/shared build && pnpm --filter @prpilot/api build
+    startCommand: pnpm --filter @prpilot/api start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WEB_ORIGIN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: DATABASE_URL
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false

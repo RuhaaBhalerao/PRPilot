@@ -13,17 +13,33 @@ export function createApp() {
   app.use(
     corsMiddleware({
       origin: (requestOrigin, callback) => {
-        // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+        // Allow requests with no origin (e.g. mobile apps, curl, server-to-server, health checks)
         if (!requestOrigin) {
           return callback(null, true);
         }
 
-        // Allow configured origin and local dev ports (5173, 5174, etc.)
-        if (
-          requestOrigin === env.WEB_ORIGIN ||
-          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)
-        ) {
+        const allowedOrigins = env.WEB_ORIGIN.split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean);
+
+        // Check configured allowed origin(s)
+        if (allowedOrigins.includes(requestOrigin)) {
           return callback(null, true);
+        }
+
+        // Allow local development (localhost or 127.0.0.1 on any port)
+        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)) {
+          return callback(null, true);
+        }
+
+        // Allow Vercel preview and production deployments (*.vercel.app)
+        try {
+          const originHost = new URL(requestOrigin).hostname;
+          if (originHost.endsWith('.vercel.app')) {
+            return callback(null, true);
+          }
+        } catch {
+          // invalid origin URL
         }
 
         return callback(new Error(`CORS blocked for origin: ${requestOrigin}`));

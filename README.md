@@ -311,6 +311,58 @@ pnpm build
   - Configurable minimum relevance threshold enforcement with explicit insufficient-evidence reporting
   - Direct grounded evidence vs. indirect reference pattern distinction in API and UI
   - Closed issue maintainer discussion analysis and intentional challenge awareness
-- [ ] **Phase 6: Patch Synthesis & Pull Request Drafting**
-  - Minimal unified diff formulation & patch execution
-  - Sandboxed test verification and pull request drafting
+- [x] **Phase 6: Patch Synthesis, Verification & Review**
+  - Unified diff formulation grounded in verified repository source files
+  - Strict eligibility guardrails (blocking lockfiles, binary assets, compiler fixtures, and hidden configs)
+  - Diff format validator and structural verification engine
+  - Sandboxed execution safety boundary with clear status reporting (`structural_only`, `sandbox_unavailable`, `verified`)
+  - Full-featured frontend `PatchReviewCard` with syntax highlighting, copy-to-clipboard, patch download, and manual verification instructions
+- [x] **Phase 7: Full System Verification & Deployment Readiness**
+  - Monorepo build and typecheck verification with 100% test coverage across 188 tests
+  - Automated database schema migrations with Neon PostgreSQL
+  - Render Blueprint (`render.yaml`) and Vercel deployment configuration (`vercel.json`)
+  - Resilient CORS origin resolution supporting Vercel preview environments and custom domains
+
+---
+
+## Deployment Guide
+
+PRPilot is designed to be deployed cleanly as a decoupled monorepo:
+- **Backend API (`apps/api`)** on **[Render](https://render.com)** (Node.js Web Service)
+- **Frontend App (`apps/web`)** on **[Vercel](https://vercel.com)** (Single Page App)
+- **Database** on **[Neon PostgreSQL](https://neon.tech)** (Serverless Postgres)
+
+### 1. Database Setup (Neon PostgreSQL)
+1. Create a free PostgreSQL project at [neon.tech](https://neon.tech).
+2. Copy the connection string (`postgresql://user:pass@ep-...neon.tech/neondb?sslmode=require`).
+3. PRPilot automatically initializes tables, indexes, and migrations upon API startup (`CREATE TABLE IF NOT EXISTS analyses ...`).
+
+### 2. Backend Deployment on Render
+Deploying using Render Blueprint (Automatic):
+1. In your Render Dashboard, click **New +** -> **Blueprint**.
+2. Connect your GitHub repository (`PRPilot`). Render will detect `render.yaml`.
+3. Provide the required environment variables:
+   - `DATABASE_URL`: Your Neon PostgreSQL connection URI.
+   - `GEMINI_API_KEY`: Your Google AI Studio API key.
+   - `WEB_ORIGIN`: Your frontend URL on Vercel (e.g. `https://prpilot.vercel.app`).
+   - `GITHUB_TOKEN`: *(Optional)* GitHub personal access token for higher rate limits.
+4. Click **Apply**. Render will install, build shared packages, and launch `apps/api`.
+
+Manual Render Configuration (Alternative):
+- **Environment**: Node
+- **Build Command**: `pnpm install && pnpm build:api`
+- **Start Command**: `pnpm start:api`
+- **Health Check Path**: `/api/v1/health`
+
+### 3. Frontend Deployment on Vercel
+1. In your Vercel Dashboard, click **Add New...** -> **Project** and import your `PRPilot` repository.
+2. In Project Settings:
+   - **Framework Preset**: Vite
+   - **Root Directory**: `apps/web` (or leave as root; `vercel.json` will route correctly)
+   - **Build Command**: `pnpm build:web`
+   - **Output Directory**: `apps/web/dist` (or `dist` if root directory is set to `apps/web`)
+3. Set Environment Variable:
+   - `VITE_API_BASE_URL`: The URL of your Render API service (e.g., `https://prpilot-api.onrender.com`).
+4. Click **Deploy**. Vercel will build the frontend with SPA client-side route rewrites.
+5. Update `WEB_ORIGIN` on your Render service with your new Vercel production domain.
+

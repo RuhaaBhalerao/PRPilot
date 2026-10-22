@@ -4,15 +4,23 @@ import {
   analyzeIssueResponseSchema,
   analysisHistoryListResponseSchema,
   persistedAnalysisSchema,
+  patchGenerationResponseSchema,
+  patchVerificationResponseSchema,
   type HealthResponse,
   type IssueLookupResponse,
   type AnalyzeIssueResponse,
   type AnalysisHistoryListResponse,
   type PersistedAnalysis,
+  type PatchGenerationResponse,
+  type PatchVerificationResponse,
+  type GeneratePatchRequest,
+  type VerifyPatchRequest,
 } from '@prpilot/shared';
 
-// API base URL configured via environment variables with fallback
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+// API base URL configured via environment variables with fallback (stripping trailing slash)
+export const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+).replace(/\/+$/, '');
 
 export class ApiError extends Error {
   constructor(
@@ -225,6 +233,131 @@ export async function fetchAnalysisById(id: string): Promise<PersistedAnalysis> 
     const parsed = persistedAnalysisSchema.safeParse(json);
     if (!parsed.success) {
       throw new ApiError('Analysis record failed schema validation', res.status, parsed.error);
+    }
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify backend service is running.`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Phase 6: Generates an AI patch and regression tests with deterministic validation.
+ */
+export async function generatePatchApi(
+  request: GeneratePatchRequest
+): Promise<PatchGenerationResponse> {
+  const url = `${API_BASE_URL}/api/v1/patches/generate`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message =
+        json && typeof json.message === 'string'
+          ? json.message
+          : `Patch generation failed with HTTP ${res.status}`;
+      throw new ApiError(message, res.status, json.details ?? json);
+    }
+
+    const parsed = patchGenerationResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new ApiError(
+        'Patch generation response failed schema validation',
+        res.status,
+        parsed.error
+      );
+    }
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify backend service is running.`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Phase 6: Fetches saved patch result for an analysis ID.
+ */
+export async function fetchPatchForAnalysis(analysisId: string): Promise<PatchGenerationResponse> {
+  const url = `${API_BASE_URL}/api/v1/analyses/${encodeURIComponent(analysisId)}/patch`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message =
+        json && typeof json.message === 'string'
+          ? json.message
+          : `No patch found for analysis '${analysisId}'`;
+      throw new ApiError(message, res.status);
+    }
+
+    const parsed = patchGenerationResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new ApiError('Patch response failed schema validation', res.status, parsed.error);
+    }
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      `Unable to connect to PRPilot API at ${API_BASE_URL}. Verify backend service is running.`,
+      undefined,
+      error
+    );
+  }
+}
+
+/**
+ * Phase 7: Verifies an existing patch structurally and queries sandbox readiness.
+ */
+export async function verifyPatchApi(
+  request: VerifyPatchRequest
+): Promise<PatchVerificationResponse> {
+  const url = `${API_BASE_URL}/api/v1/patches/verify`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message =
+        json && typeof json.message === 'string'
+          ? json.message
+          : `Patch verification failed with HTTP ${res.status}`;
+      throw new ApiError(message, res.status, json.details ?? json);
+    }
+
+    const parsed = patchVerificationResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new ApiError(
+        'Patch verification response failed schema validation',
+        res.status,
+        parsed.error
+      );
     }
     return parsed.data;
   } catch (error) {
